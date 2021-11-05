@@ -1,7 +1,5 @@
 ##############################################################
-# This Dockerfile contains the additional NVIDIA compilers, 
-# libraries, and plugins to enable OpenACC and NVIDIA GPU 
-# acceleration of Devito codes.
+# This Dockerfile contains NVIDIA HPC SDK (nvc, cuda, OpenMPI) and Devito
 #
 # BUILD: 
 #   docker build --network=host --file docker/Dockerfile.nvidia --tag devito:nvidia .
@@ -182,6 +180,4 @@ RUN mkdir -p /app && \
 USER app
 WORKDIR /app/devito
 
-EXPOSE 8888
-ENTRYPOINT ["/docker-entrypoint.sh"]
-CMD ["/jupyter"]
+CMD ["/bin/bash"]
