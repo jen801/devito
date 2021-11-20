@@ -273,7 +273,6 @@ class PragmaShmTransformer(PragmaSimdTransformer):
         return partree
 
     def _make_partree(self, candidates, nthreads=None):
-
         assert candidates
 
         # Get the collapsable Iterations
