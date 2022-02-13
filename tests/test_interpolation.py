@@ -704,7 +704,10 @@ def test_decompose_src_to_aligned(shape, so, tn, inj):
     assert(s_id.data[nzinds[0][len(nzinds[0])-1], nzinds[1][len(nzinds[0])-1],
            nzinds[2][len(nzinds[0])-1]] == len(nzinds[0])-1)
 
+    # injection code here
+    import pdb;pdb.set_trace()
     # Assert that first, last as well as other indices are as expected
+    
     assert (src.shape[0] == save_src.shape[0])
     assert (8*src.shape[1] == save_src.shape[1])
     import pdb;pdb.set_trace()
