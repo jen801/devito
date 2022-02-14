@@ -5,11 +5,12 @@ import pytest
 from sympy import Float
 
 from devito import (Grid, Operator, Dimension, SparseFunction, SparseTimeFunction,
-                    Function, TimeFunction,
+                    Function, TimeFunction, Eq, Inc, solve,
                     PrecomputedSparseFunction, PrecomputedSparseTimeFunction,
                     MatrixSparseTimeFunction)
+from devito.types import Scalar, Constant
 from examples.seismic import (demo_model, TimeAxis, RickerSource, Receiver,
-                              AcquisitionGeometry)
+                              AcquisitionGeometry, Model)
 from examples.seismic.acoustic import AcousticWaveSolver
 import scipy.sparse
 
@@ -590,3 +591,265 @@ def test_msf_interpolate():
     assert np.all(np.unique(nzt) == np.array([1, 2, 3, 4]))
     # 12 points x 4 timesteps
     assert nzt.size == 48
+
+
+@pytest.mark.parametrize('inj', ('s_id',))
+@pytest.mark.parametrize('shape', [(50, 50, 50)])
+@pytest.mark.parametrize('so', (2, 4, 8))
+@pytest.mark.parametrize('tn', (20, 40, 100))
+def test_decompose_src_to_aligned(shape, so, tn, inj):
+    """ Test decomposition of non-aligned source wavelets to equivalent
+        aligned to grid points source wavelets
+    """
+
+    spacing = (10., 10., 10)
+    origin = (0., 0., 0.)
+
+    # Initialize v field
+    v = np.empty(shape, dtype=np.float32)
+    v[:, :, :int(shape[2]/2)] = 2
+    v[:, :, int(shape[2]/2):] = 1
+
+    # Construct model
+    model = Model(vp=v, origin=origin, shape=shape, spacing=spacing, space_order=so)
+
+    x, y, z = model.grid.dimensions  # Get dimensions
+
+    t0 = 0  # Simulation starts a t=0
+    dt = 1  # model.critical_dt  # Time step from model grid spacing
+    tn = tn
+    time_range = TimeAxis(start=t0, stop=tn, step=dt)
+    f0 = 0.010  # Source peak frequency is 10Hz (0.010 kHz)
+    src = RickerSource(name='src', grid=model.grid, f0=f0,
+                       npoint=9, time_range=time_range)
+
+    # First, position source centrally in all dimensions, then set depth
+    stx = 0.125
+    ste = 0.9
+    stepx = (ste-stx)/int(np.sqrt(src.npoint))
+
+    # Uniform x,y source spread
+    src.coordinates.data[:, :2] = \
+        np.array(np.meshgrid(np.arange(stx, ste,
+                 stepx), np.arange(stx, ste, stepx))).T.reshape(-1, 2) \
+        * np.array(model.domain_size[:1])
+
+    src.coordinates.data[:, -1] = 20  # Depth is 20m
+
+    # Get positions affected by sparse operator
+    arr = src.gridpoints_all
+
+    # Source ID function to hold unique id for each point affected
+    s_id = Function(name='s_id', shape=model.grid.shape, dimensions=model.grid.dimensions,
+                    space_order=0, dtype=np.int32)
+    s_m = Function(name='s_m', shape=model.grid.shape, dimensions=model.grid.dimensions,
+                   space_order=0, dtype=np.int32)
+
+    nzinds = (arr[:, 0], arr[:, 1], arr[:, 2])
+    s_id.data[nzinds] = tuple(np.arange(len(nzinds[0])))
+    s_m.data[nzinds[0], nzinds[1], nzinds[2]] = 1
+
+    nnz_shape = (model.grid.shape[0], model.grid.shape[1])  # Change only 3rd dim
+    nnz = Function(name='nnz', shape=(list(nnz_shape)), dimensions=(x, y),
+                   space_order=0, dtype=np.int32)
+    nnz.data[:, :] = s_m.data[:, :, :].sum(2)
+    inds = np.where(s_m.data == 1.)
+    print("Grid - source positions:", inds)
+    maxz = len(np.unique(inds[-1]))
+    # Change only 3rd dim
+    u = TimeFunction(name="u", grid=model.grid, space_order=so, time_order=2)
+    sp_zi = Dimension(name='sp_zi')
+    sparse_shape = (model.grid.shape[0], model.grid.shape[1], maxz)
+    sp_source_mask = Function(name='sp_source_mask', shape=(list(sparse_shape)),
+                              dimensions=(x, y, sp_zi), space_order=0, dtype=np.int32)
+
+    # Now holds IDs
+    sp_source_mask.data[inds[0], inds[1], :] = tuple(inds[2][:len(np.unique(inds[2]))])
+    # seems good
+
+    # Helper dimension to schedule loops of different sizes together
+    id_dim = Dimension(name='id_dim')
+
+    time = model.grid.time_dim
+    save_src = TimeFunction(name='save_src', shape=(src.shape[0], len(arr)),
+                            dimensions=(time, id_dim))
+
+    inj = eval(inj)
+    save_src_term = src.inject(field=save_src[time, inj],
+                               expr=src * dt**2 / model.m)
+
+    op1 = Operator(save_src_term)
+    op1.apply()
+
+    zind = Scalar(name='zind', dtype=np.int32)
+    eq0 = Eq(sp_zi.symbolic_max, nnz[x, y] - 1,
+             implicit_dims=(time, x, y))
+    eq1 = Eq(zind, sp_source_mask[x, y, sp_zi], implicit_dims=(time, x, y, sp_zi))
+
+    # inj_u = source_mask[x, y, zind] * save_src_u[time, source_id[x, y, zind]]
+    # Is source_mask needed /
+    inj_u = save_src[time, s_id[x, y, zind]]
+
+    t = model.grid.stepping_dim
+    eq_u = Inc(u[t, x, y, zind], inj_u, implicit_dims=(time, x, y, sp_zi))
+
+    tteqs = (eq0, eq1, eq_u)
+    op = Operator(tteqs)
+    op.apply()
+
+    # Assert that first, last as well as other indices are as expected
+    assert(s_id.data[nzinds[0][0], nzinds[1][0], nzinds[2][0]] == 0)
+    assert(s_id.data[nzinds[0][-1], nzinds[1][-1], nzinds[2][-1]] == len(nzinds[0])-1)
+    assert(s_id.data[nzinds[0][len(nzinds[0])-1], nzinds[1][len(nzinds[0])-1],
+           nzinds[2][len(nzinds[0])-1]] == len(nzinds[0])-1)
+
+    # injection code here
+
+    # Assert that first, last as well as other indices are as expected
+    from devito import norm
+    assert (src.shape[0] == save_src.shape[0])
+    assert (8*src.shape[1] == save_src.shape[1])
+    norm1 = norm(u)
+
+    src_term = src.inject(field=u, expr=src * dt**2 / model.m)
+    u.data[:] = 0
+    op2 = Operator(src_term)
+    op2.apply()
+    norm2 = norm(u)
+    assert np.isclose(norm1, norm2)
+    # print(norm1)
+
+
+@pytest.mark.parametrize('inj', ('s_id',))
+@pytest.mark.parametrize('shape', [(50, 50, 50)])
+@pytest.mark.parametrize('so', (2, 4, 8))
+@pytest.mark.parametrize('tn', (20, 40, 100))
+def test_decompose_src_temporal(shape, so, tn, inj):
+    """ Test decomposition of non-aligned source wavelets to equivalent
+        aligned to grid points source wavelets
+    """
+
+    spacing = (10., 10., 10)
+    origin = (0., 0., 0.)
+
+    # Initialize v field
+    v = np.empty(shape, dtype=np.float32)
+    v[:, :, :int(shape[2]/2)] = 2
+    v[:, :, int(shape[2]/2):] = 1
+
+    # Construct model
+    model = Model(vp=v, origin=origin, shape=shape, spacing=spacing, space_order=so)
+
+    x, y, z = model.grid.dimensions  # Get dimensions
+
+    t0 = 0  # Simulation starts a t=0
+    dt = 1  # model.critical_dt  # Time step from model grid spacing
+    tn = tn
+    time_range = TimeAxis(start=t0, stop=tn, step=dt)
+    f0 = 0.010  # Source peak frequency is 10Hz (0.010 kHz)
+    src = RickerSource(name='src', grid=model.grid, f0=f0,
+                       npoint=9, time_range=time_range)
+
+    # First, position source centrally in all dimensions, then set depth
+    stx = 0.125
+    ste = 0.9
+    stepx = (ste-stx)/int(np.sqrt(src.npoint))
+
+    # Uniform x,y source spread
+    src.coordinates.data[:, :2] = \
+        np.array(np.meshgrid(np.arange(stx, ste,
+                 stepx), np.arange(stx, ste, stepx))).T.reshape(-1, 2) \
+        * np.array(model.domain_size[:1])
+
+    src.coordinates.data[:, -1] = 20  # Depth is 20m
+
+    # Get positions affected by sparse operator
+    arr = src.gridpoints_all
+
+    # Source ID function to hold unique id for each point affected
+    s_id = Function(name='s_id', shape=model.grid.shape, dimensions=model.grid.dimensions,
+                    space_order=0, dtype=np.int32)
+    s_m = Function(name='s_m', shape=model.grid.shape, dimensions=model.grid.dimensions,
+                   space_order=0, dtype=np.int32)
+
+    nzinds = (arr[:, 0], arr[:, 1], arr[:, 2])
+    s_id.data[nzinds] = tuple(np.arange(len(nzinds[0])))
+    s_m.data[nzinds[0], nzinds[1], nzinds[2]] = 1
+
+    nnz_shape = (model.grid.shape[0], model.grid.shape[1])  # Change only 3rd dim
+    nnz = Function(name='nnz', shape=(list(nnz_shape)), dimensions=(x, y),
+                   space_order=0, dtype=np.int32)
+    nnz.data[:, :] = s_m.data[:, :, :].sum(2)
+    inds = np.where(s_m.data == 1.)
+    print("Grid - source positions:", inds)
+    maxz = len(np.unique(inds[-1]))
+    # Change only 3rd dim
+    u = TimeFunction(name="u", grid=model.grid, space_order=so, time_order=2)
+    sp_zi = Dimension(name='sp_zi')
+    sparse_shape = (model.grid.shape[0], model.grid.shape[1], maxz)
+    sp_source_mask = Function(name='sp_source_mask', shape=(list(sparse_shape)),
+                              dimensions=(x, y, sp_zi), space_order=0, dtype=np.int32)
+
+    # Now holds IDs
+    sp_source_mask.data[inds[0], inds[1], :] = tuple(inds[2][:len(np.unique(inds[2]))])
+    # seems good
+
+    # Helper dimension to schedule loops of different sizes together
+    id_dim = Dimension(name='id_dim')
+
+    time = model.grid.time_dim
+    save_src = TimeFunction(name='save_src', shape=(src.shape[0], len(arr)),
+                            dimensions=(time, id_dim))
+
+    inj = eval(inj)
+    save_src_term = src.inject(field=save_src[time, inj],
+                               expr=src * dt**2 / model.m)
+
+    op1 = Operator(save_src_term)
+    op1.apply()
+
+    zind = Scalar(name='zind', dtype=np.int32)
+    eq0 = Eq(sp_zi.symbolic_max, nnz[x, y] - 1, implicit_dims=(time, x, y))
+    eq1 = Eq(zind, sp_source_mask[x, y, sp_zi], implicit_dims=(time, x, y, sp_zi))
+
+    # inj_u = source_mask[x, y, zind] * save_src_u[time, source_id[x, y, zind]]
+    # Is source_mask needed /
+    id0 = Scalar(name='id0', dtype=np.int32)
+    eq_inj = Eq(id0, s_id[x, y, zind], implicit_dims=(time, x, y, sp_zi))
+    # inj_u = save_src[time, id0]
+    t = model.grid.stepping_dim
+    eq_u = Inc(u.forward[t+1, x, y, zind], save_src[time, id0],
+               implicit_dims=(time, x, y, sp_zi))
+
+    # Create an equation with second-order derivatives
+    a = Constant(name='a')
+    eq = Eq(u.dt, a*u.laplace + 0.1, subdomain=model.grid.interior)
+    stencil = solve(eq, u.forward)
+    eq_st = Eq(u.forward, stencil, implicit_dims=(time, x, y))
+
+    tteqs = (eq0, eq1, eq_inj, eq_u, eq_st)
+    # op = Operator(tteqs, opt=('advanced', {'skewing': True}))
+    op = Operator(tteqs, opt=('advanced'))
+    op.apply(dt=model.critical_dt)
+    # import pdb;pdb.set_trace()
+
+    # Assert that first, last as well as other indices are as expected
+    assert(s_id.data[nzinds[0][0], nzinds[1][0], nzinds[2][0]] == 0)
+    assert(s_id.data[nzinds[0][-1], nzinds[1][-1], nzinds[2][-1]] == len(nzinds[0])-1)
+    assert(s_id.data[nzinds[0][len(nzinds[0])-1], nzinds[1][len(nzinds[0])-1],
+           nzinds[2][len(nzinds[0])-1]] == len(nzinds[0])-1)
+
+    # injection code here
+
+    # Assert that first, last as well as other indices are as expected
+    from devito import norm
+    assert (src.shape[0] == save_src.shape[0])
+    assert (8*src.shape[1] == save_src.shape[1])
+    norm1 = norm(u)
+
+    src_term = src.inject(field=u.forward, expr=src * dt**2 / model.m)
+    u.data[:] = 0
+    op2 = Operator([src_term, eq_st])
+    op2.apply(dt=model.critical_dt)
+    norm2 = norm(u)
+    assert np.isclose(norm1, norm2)
