@@ -593,7 +593,8 @@ def test_msf_interpolate():
     assert nzt.size == 48
 
 
-@pytest.mark.parametrize('inj', ('s_id', '1 + s_id', 's_id[0, 0, s_id]'))
+# @pytest.mark.parametrize('inj', ('s_id', '1 + s_id', 's_id[0, 0, s_id]'))
+@pytest.mark.parametrize('inj', ('s_id',))
 @pytest.mark.parametrize('shape', [(50, 50, 50)])
 @pytest.mark.parametrize('so', (2, 4, 8))
 @pytest.mark.parametrize('tn', (20, 40, 100))
@@ -666,7 +667,6 @@ def test_decompose_src_to_aligned(shape, so, tn, inj):
     # Now holds IDs
     sp_source_mask.data[inds[0], inds[1], :] = tuple(inds[2][:len(np.unique(inds[2]))])
     # seems good
-    # import pdb;pdb.set_trace()
 
     # Helper dimension to schedule loops of different sizes together
     id_dim = Dimension(name='id_dim')
@@ -692,7 +692,7 @@ def test_decompose_src_to_aligned(shape, so, tn, inj):
     inj_u = save_src[time, s_id[x, y, zind]]
 
     t = model.grid.stepping_dim
-    eq_u = Inc(u.forward[t+1, x, y, zind], inj_u, implicit_dims=(time, x, y, sp_zi))
+    eq_u = Inc(u[t, x, y, zind], inj_u, implicit_dims=(time, x, y, sp_zi))
 
     tteqs = (eq0, eq1, eq_u)
     op = Operator(tteqs)
@@ -705,12 +705,20 @@ def test_decompose_src_to_aligned(shape, so, tn, inj):
            nzinds[2][len(nzinds[0])-1]] == len(nzinds[0])-1)
 
     # injection code here
-    import pdb;pdb.set_trace()
+
     # Assert that first, last as well as other indices are as expected
-    
+    from devito import norm
     assert (src.shape[0] == save_src.shape[0])
     assert (8*src.shape[1] == save_src.shape[1])
-    import pdb;pdb.set_trace()
+    norm1 = norm(u)
+
+    src_term = src.inject(field=u, expr=src * dt**2 / model.m)
+    u.data[:] = 0
+    op2 = Operator(src_term)
+    op2.apply()
+    norm2 = norm(u)
+    assert np.isclose(norm1, norm2)
+    print(norm1)
 
 
 @pytest.mark.parametrize('inj', ('r_id', '1 + r_id', 'r_id[0, 0, r_id]'))
