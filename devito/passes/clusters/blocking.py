@@ -115,7 +115,6 @@ class AnalyzeHeuristicBlocking(AnayzeBlockingBase):
 
     def process(self, clusters):
         clusters = super().process(clusters)
-
         # Heuristic: if there aren't at least two TILABLE Dimensions, drop it
         processed = []
         for c in clusters:
@@ -134,12 +133,17 @@ class AnalyzeHeuristicBlocking(AnayzeBlockingBase):
 
         d = prefix[-1].dim
 
+        # import pdb;pdb.set_trace()
         for c in clusters:
             # PARALLEL* and AFFINE are necessary conditions
             if AFFINE not in c.properties[d] or \
                not ({PARALLEL, PARALLEL_IF_PVT} & c.properties[d]):
                 return clusters
 
+            # if not ({PARALLEL, PARALLEL_IF_PVT} & c.properties[d]):
+            #     return clusters
+
+            # import pdb;pdb.set_trace()
             # Heuristic: innermost Dimensions may be ruled out a-priori
             is_inner = d is c.itintervals[-1].dim
             if is_inner and not self.inner:
@@ -164,6 +168,7 @@ class AnalyzeHeuristicBlocking(AnayzeBlockingBase):
             pass
 
         # All good, `d` is actually TILABLE
+        # import pdb;pdb.set_trace()
         processed = attach_property(clusters, d, TILABLE)
 
         return processed
@@ -223,6 +228,7 @@ class SynthesizeBlocking(Queue):
         if not any(TILABLE in c.properties[d] for c in clusters):
             return clusters
 
+        # import pdb;pdb.set_trace()
         # Create the block Dimensions (in total `self.levels` Dimensions)
         base = self.sregistry.make_name(prefix=d.name)
 

@@ -697,6 +697,7 @@ def test_decompose_src_to_aligned(shape, so, tn, inj):
     tteqs = (eq0, eq1, eq_u)
     op = Operator(tteqs)
     op.apply()
+    # import pdb;pdb.set_trace()
 
     # Assert that first, last as well as other indices are as expected
     assert(s_id.data[nzinds[0][0], nzinds[1][0], nzinds[2][0]] == 0)
