@@ -282,36 +282,38 @@ def decompose(ispace, d, block_dims):
         else:
             intervals.append(i)
 
-    # Create the intervals relations
-    # 1: `bd > d`
+    # Create the relations.
+    # Example: consider the relation `(t, x, y)` and assume we decompose `x` over
+    # `xbb, xb, xi`; then we decompose the relation as two relations, `(t, xbb, y)`
+    # and `(xbb, xb, xi)`
     relations = [tuple(block_dims)]
 
-    # 2: Suitably replace `d` with all `bd`'s
-    for r in ispace.relations:
-        try:
-            n = r.index(d)
-        except ValueError:
-            relations.append(r)
+    for r in ispace.intervals.relations:
+        relations.append(tuple(block_dims[0] if
+                         (i is d and i._depth > block_dims[0]._depth)
+                         else i for i in r))
+
+    # Add more relations
+    for n, i in enumerate(ispace):
+        if i.dim is d:
             continue
-
-        for bd in block_dims:
-            # Avoid e.g. `x > yb`
-            if any(i._depth > bd._depth for i in r[:n] if i.is_Block) or \
-               any(bd._depth < i._depth for i in r[n+1:] if i.is_Block):
-                continue
-
-            relations.append(tuple(bd if i is d else i for i in r))
-
-    # 3: Make sure BlockDimensions at same depth stick next to each other
-    # E.g., `(t, xbb, ybb, xb, yb, x, y)`, and NOT e.g. `(t, xbb, xb, x, ybb, ...)`
-    # NOTE: this is perfectly legal since:
-    # TILABLE => (perfect nest & PARALLEL) => interchangeable
-    for i in ispace.itdimensions:
-        if not i.is_Block:
-            continue
-        for bd in block_dims:
-            if bd._depth < i._depth:
-                relations.append((bd, i))
+        elif i.dim.is_Block:
+            # Make sure BlockDimensions on the same level stick next to each other.
+            # For example, we want `(t, xbb, ybb, xb, yb, x, y)`, rather than say
+            # `(t, xbb, xb, x, ybb, ...)`
+            for bd in block_dims:
+                if i.dim._depth > bd._depth:
+                    relations.append((bd, i.dim))
+                else:
+                    relations.append((i.dim, bd))
+        elif n > ispace.intervals.index(d):
+            # The non-Block subsequent Dimensions must follow the block Dimensions
+            for bd in block_dims:
+                relations.append((bd, i.dim))
+        else:
+            # All other Dimensions must precede the block Dimensions
+            for bd in block_dims:
+                relations.append((i.dim, bd))
 
     intervals = IntervalGroup(intervals, relations=relations)
 
