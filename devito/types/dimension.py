@@ -323,6 +323,13 @@ class BasicDimension(Dimension, Symbol):
     def __init_finalize__(self, name, spacing=None):
         self._spacing = spacing or Scalar(name='h_%s' % name, is_const=True)
 
+    @property
+    def _depth(self):
+        """
+        The depth of `self` in the hierarchy of IncrDimensions.
+        """
+        return len([i for i in self._defines if i.is_Incr])
+
 
 class DefaultDimension(Dimension, DataSymbol):
 
@@ -384,6 +391,13 @@ class SpaceDimension(BasicDimension):
     """
 
     is_Space = True
+
+    @property
+    def _depth(self):
+        """
+        The depth of `self` in the hierarchy of IncrDimensions.
+        """
+        return len([i for i in self._defines if i.is_Incr])
 
 
 class TimeDimension(BasicDimension):
@@ -670,6 +684,13 @@ class SubDimension(DerivedDimension):
             rtkn = requested_rtkn
 
         return {i.name: v for i, v in zip(self._thickness_map, (ltkn, rtkn))}
+
+    @property
+    def _depth(self):
+        """
+        The depth of `self` in the hierarchy of IncrDimensions.
+        """
+        return len([i for i in self._defines if i.is_Incr])
 
     # Pickling support
     _pickle_args = DerivedDimension._pickle_args +\
