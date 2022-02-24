@@ -5,7 +5,7 @@ from devito.exceptions import InvalidOperator
 from devito.passes.equations import collect_derivatives
 from devito.passes.clusters import (Lift, blocking, buffering, cire, cse,
                                     extract_increments, factorize, fission, fuse,
-                                    optimize_pows, optimize_msds)
+                                    optimize_pows, optimize_msds, skewing)
 from devito.passes.iet import (CTarget, OmpTarget, avoid_denormals, linearize, mpiize,
                                hoist_prodders, relax_incr_dimensions)
 from devito.tools import timed_pass
@@ -99,6 +99,7 @@ class Cpu64OperatorMixin(object):
         o['blocklazy'] = oo.pop('blocklazy', not o['blockeager'])
         o['blockrelax'] = oo.pop('blockrelax', cls.BLOCK_RELAX)
         o['skewing'] = oo.pop('skewing', False)
+        o['blocktime'] = oo.pop('blocktime', o['skewing'])
         o['par-tile'] = ParTile(oo.pop('par-tile', False), default=16)
 
         # CIRE
@@ -206,6 +207,11 @@ class Cpu64AdvOperator(Cpu64OperatorMixin, CoreOperator):
         if options['blocklazy']:
             clusters = blocking(clusters, sregistry, options)
 
+        # Temporal blocking to improve data locality
+        if options['skewing']:
+            import pdb;pdb.set_trace()
+            clusters = skewing(clusters, sregistry, options)
+
         return clusters
 
     @classmethod
@@ -288,6 +294,7 @@ class Cpu64CustomOperator(Cpu64OperatorMixin, CustomOperator):
         return {
             'buffering': lambda i: buffering(i, callback, sregistry, options),
             'blocking': lambda i: blocking(i, sregistry, options),
+            'skewing': lambda i: skewing(i, options),
             'factorize': factorize,
             'fission': fission,
             'fuse': lambda i: fuse(i, options=options),

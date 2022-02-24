@@ -1,14 +1,16 @@
 from sympy import sympify
+from sympy import Mod
 
 from devito.ir.clusters import Queue
 from devito.ir.support import (AFFINE, PARALLEL, PARALLEL_IF_ATOMIC, PARALLEL_IF_PVT,
                                SEQUENTIAL, SKEWABLE, TILABLE, Interval, IntervalGroup,
                                IterationSpace, Scope)
-from devito.symbolics import uxreplace, xreplace_indices
-from devito.tools import UnboundedMultiTuple, as_tuple, flatten
-from devito.types import BlockDimension
+from devito.symbolics import uxreplace, INT, xreplace_indices, evalrel, retrieve_indexed
+from devito.types import RIncrDimension
+from devito.tools import UnboundedMultiTuple, as_tuple, flatten, as_list
 
-__all__ = ['blocking']
+
+__all__ = ['blocking', 'skewing']
 
 
 def blocking(clusters, sregistry, options):
@@ -54,12 +56,48 @@ def blocking(clusters, sregistry, options):
     clusters = AnalyzeSkewing().process(clusters)
 
     if options['blocklevels'] > 0:
+        if options['blocktime'] and options['skewing']:
+            clusters = TBlocking(sregistry, options).process(clusters)
         clusters = SynthesizeBlocking(sregistry, options).process(clusters)
 
-    if options['skewing']:
-        clusters = SynthesizeSkewing(options).process(clusters)
+    # if options['skewing']:
+    #    clusters = SynthesizeSkewing(options).process(clusters)
 
     return clusters
+
+
+def skewing(clusters, sregistry, options):
+    """
+    This pass helps to skew accesses and loop bounds as well as perform loop interchange
+    towards wavefront temporal blocking
+    Parameters
+    ----------
+    clusters : tuple of Clusters
+        Input Clusters, subject of the optimization pass.
+    options : dict
+        The optimization options.
+        * `skewinner` (boolean, False): enable/disable loop skewing along the
+           innermost loop.
+    """
+    if options['blockrelax']:
+        analyzer = AnalyzeBlocking()
+    else:
+        analyzer = AnalyzeHeuristicBlocking(options)
+    clusters = analyzer.process(clusters)
+    clusters = AnalyzeSkewing().process(clusters)
+
+    processed = clusters
+    # import pdb;pdb.set_trace()
+
+    processed = SynthesizeSkewing(options).process(processed)
+    # processed = Skewing(options).process(processed)
+    # import pdb;pdb.set_trace()
+
+    processed = RelaxSkewed(options).process(processed)
+
+    import pdb;pdb.set_trace()
+
+    return processed
 
 
 class AnayzeBlockingBase(Queue):
@@ -233,18 +271,7 @@ class SynthesizeBlocking(Queue):
             # This will result in a parametric step, e.g. `x0_blk0_size`
             step = None
 
-        name = self.sregistry.make_name(prefix="%s_blk" % base)
-        bd = BlockDimension(name, d, d.symbolic_min, d.symbolic_max, step)
-        step = bd.step
-        block_dims = [bd]
-
-        for _ in range(1, self.levels):
-            name = self.sregistry.make_name(prefix="%s_blk" % base)
-            bd = BlockDimension(name, bd, bd, bd + bd.step - 1, size=step)
-            block_dims.append(bd)
-
-        bd = BlockDimension(d.name, bd, bd, bd + bd.step - 1, 1, size=step)
-        block_dims.append(bd)
+        block_dims = create_block_dims(self.sregistry, base, d, self.levels, step)
 
         processed = []
         for c in clusters:
@@ -252,7 +279,7 @@ class SynthesizeBlocking(Queue):
                 ispace = decompose(c.ispace, d, block_dims)
 
                 # Use the innermost BlockDimension in place of `d`
-                exprs = [uxreplace(e, {d: bd}) for e in c.exprs]
+                exprs = [uxreplace(e, {d: block_dims[-1]}) for e in c.exprs]
 
                 # The new Cluster properties
                 # TILABLE property is dropped after the blocking.
@@ -266,6 +293,30 @@ class SynthesizeBlocking(Queue):
                 processed.append(c)
 
         return processed
+
+
+def create_block_dims(sreg, base, d, levels, step, **kwargs):
+    """
+    Create the block Dimensions (in total `self.levels` Dimensions)
+    """
+    sf = kwargs.pop('sf', 1)
+    name = sreg.make_name(prefix="%s_blk" % base)
+    bd = RIncrDimension(name, d, d.symbolic_min, d.symbolic_max, step=step,
+                        rmax=sf*d.symbolic_max)
+    size = bd.step
+    block_dims = [bd]
+
+    for _ in range(1, levels):
+        name = sreg.make_name(prefix="%s_blk" % base)
+        bd = RIncrDimension(name, bd, bd, bd + bd.step - 1, size=size)
+        block_dims.append(bd)
+
+    bd = RIncrDimension(d.name, bd, bd, bd + bd.step - 1, 1, size=size,
+                        rmax=evalrel(min, [bd + bd.step - 1, sf*d.root.symbolic_max]),
+                        rstep=sf)
+    block_dims.append(bd)
+
+    return block_dims
 
 
 def decompose(ispace, d, block_dims):
@@ -319,7 +370,8 @@ def decompose(ispace, d, block_dims):
 
     sub_iterators = dict(ispace.sub_iterators)
     sub_iterators.pop(d, None)
-    sub_iterators.update({bd: ispace.sub_iterators.get(d, []) for bd in block_dims})
+    sub_iterators.update({block_dims[-1]: ispace.sub_iterators.get(d, [])})
+    sub_iterators.update({bd: () for bd in block_dims[:-1]})
 
     directions = dict(ispace.directions)
     directions.pop(d)
@@ -361,8 +413,11 @@ class SynthesizeSkewing(Queue):
 
     """
 
+    template = "%s%d_blk%s"
+
     def __init__(self, options):
         self.skewinner = bool(options['blockinner'])
+        self.levels = options['blocklevels']
 
         super().__init__()
 
@@ -371,29 +426,45 @@ class SynthesizeSkewing(Queue):
             return clusters
 
         d = prefix[-1].dim
-
         processed = []
         for c in clusters:
             if SKEWABLE not in c.properties[d]:
                 return clusters
 
-            skew_dims = {i.dim for i in c.ispace if SEQUENTIAL in c.properties[i.dim]}
-            if len(skew_dims) > 1:
+            if d is c.ispace[-1].dim and not self.skewinner:
                 return clusters
-            skew_dim = skew_dims.pop()
+
+            skew_dims = [i.dim for i in c.ispace if SEQUENTIAL in c.properties[i.dim]]
+            if len(skew_dims) > 2:
+                return clusters
+            skew_dim = skew_dims[-1]
 
             # Since we are here, prefix is skewable and nested under a
             # SEQUENTIAL loop.
+
+            skewlevel = 1
             intervals = []
             for i in c.ispace:
-                if i.dim is d and (not d.is_Block or d._depth == 1):
-                    intervals.append(Interval(d, skew_dim, skew_dim))
+                if i.dim is d:
+                    # If time is blocked skew at skewlevel + 1
+                    cond1 = len(skew_dims) == 2 and d._depth == skewlevel + 1
+                    # If time is blocked skew at level == 0 (e.g. subdims)
+                    cond3 = len(skew_dims) == 2 and d._depth == 0
+                    # If time is not blocked skew at level <=1
+                    cond2 = len(skew_dims) == 1 and d._depth <= skewlevel
+
+                    if cond1:
+                        intervals.append(Interval(d, i.lower, i.upper))
+                    elif cond2 or cond3:
+                        intervals.append(Interval(d, skew_dim, skew_dim))
+                    else:
+                        intervals.append(i)
                 else:
                     intervals.append(i)
+
             intervals = IntervalGroup(intervals, relations=c.ispace.relations)
             ispace = IterationSpace(intervals, c.ispace.sub_iterators,
                                     c.ispace.directions)
-
             exprs = xreplace_indices(c.exprs, {d: d - skew_dim})
             processed.append(c.rebuild(exprs=exprs, ispace=ispace,
                                        properties=c.properties))
@@ -415,3 +486,195 @@ def attach_property(clusters, d, p):
         processed.append(c.rebuild(properties=properties))
 
     return processed
+
+
+class TBlocking(Queue):
+
+    template = "%s%d_blk%s"
+
+    def __init__(self, sregistry, options):
+        self.sregistry = sregistry
+        self.blk_size_gen = None
+        super().__init__()
+
+    def callback(self, clusters, prefix):
+        if not prefix:
+            return clusters
+
+        d = prefix[-1].dim
+
+        processed = []
+
+        if self.blk_size_gen:
+            # If a new TILABLE nest, pull what would be the next par-tile entry
+            if not any(i.dim.is_Block for i in prefix):
+                self.blk_size_gen.iter()
+
+            step = sympify(self.blk_size_gen.next())
+        else:
+            # This will result in a parametric step, e.g. `x0_blk0_size`
+            step = None
+
+        for c in clusters:
+            sf = get_skewing_factor(c)
+            if d.is_Time:
+                base = self.sregistry.make_name(prefix=d.name)
+                block_dims = create_block_dims(self.sregistry, base, d, 1,
+                                               step, sf=sf)
+
+                ispace = decompose(c.ispace, d, block_dims)
+
+                # Use the innermost IncrDimension in place of `d`
+                exprs = [uxreplace(e, {d: block_dims[-1]}) for e in c.exprs]
+
+                # The new sub_iterators (skewing factor)
+                sub_iterators = dict(ispace.sub_iterators)
+                sub_iters = []
+                for j in sub_iterators[block_dims[-1]]:
+                    if sf > 1 and j.is_Modulo:
+                        nom = INT(block_dims[-1]/sf)
+                        denom = (block_dims[-1].root.symbolic_max -
+                                 block_dims[-1].root.symbolic_min + 1)
+                        sub_iters.append(j.func(offset=Mod(nom, denom) + j.offset - d))
+                    else:
+                        sub_iters.append(j)
+                sub_iterators.update({block_dims[-1]: tuple(sub_iters)})
+
+                ispace = IterationSpace(ispace, sub_iterators, ispace.directions)
+
+                # The new Cluster properties
+                properties = dict(c.properties)
+                properties.pop(d)
+                properties.update({bd: c.properties[d] for bd in block_dims})
+
+                processed.append(c.rebuild(exprs=exprs, ispace=ispace,
+                                           properties=properties))
+
+            elif d._depth == 1:  # Interchanged non-Time loops are not PARALLEL anymore
+                properties = dict(c.properties)
+                properties.update({d: c.properties[d] - {PARALLEL}})
+                processed.append(c.rebuild(properties=properties))
+            else:
+                processed.append(c)
+        return processed
+
+
+class RelaxSkewed(Queue):
+
+    def __init__(self, options):
+        super().__init__()
+
+    def callback(self, clusters, prefix):
+        if not prefix:
+            return clusters
+
+        d = prefix[-1].dim
+
+        # Rule out time dim and not is_Incr
+        if d.is_Time or not d.is_Incr:
+            return clusters
+
+        processed = []
+        for c in clusters:
+            skew_dims = [i.dim for i in c.ispace if SEQUENTIAL in c.properties[i.dim]]
+
+            if len(skew_dims) == 1:
+                # return clusters
+                processed.append(c)
+                continue
+
+            family_dims = [j.dim for j in c.ispace if j.dim.root is d.root]
+
+            # IMPORTANT: we only process the head of the family in this Queue
+            if d is not family_dims[0]:
+                # return clusters
+                processed.append(c)
+                continue
+
+            sf = get_skewing_factor(c)
+            skew_dim = skew_dims[-1]
+            intervals = []
+            mapper = {}
+            for i in c.ispace:
+                if i.dim in family_dims:
+                    if i.dim._depth == 1:
+                        offset = sf*(skew_dim.root.symbolic_max -
+                                     skew_dim.root.symbolic_min)
+                        rmax = i.dim.symbolic_max + offset
+                        sd = i.dim.func(rmax=rmax)
+                        intervals.append(Interval(sd, i.lower, i.upper))
+                        mapper.update({i.dim: sd})
+                    elif i.dim._depth == 2:
+                        rmin = evalrel(max, [i.dim.symbolic_min,
+                                       i.dim.root.symbolic_min + skew_dim])
+                        rmax = i.dim.symbolic_rmax.xreplace({i.dim.root.symbolic_max:
+                                                            i.dim.root.symbolic_max +
+                                                            skew_dim})
+                        sd2 = i.dim.func(parent=sd, rmin=rmin, rmax=rmax)
+                        intervals.append(Interval(sd2, i.lower, i.upper))
+                        mapper.update({i.dim: sd2})
+                    elif i.dim._depth > 2:
+                        res = evalrel(min, [sd2.symbolic_rmax, i.dim.symbolic_max])
+                        rmax = i.dim.symbolic_rmax.xreplace({i.dim.symbolic_rmax: res})
+                        sd3 = i.dim.func(parent=sd2, rmax=rmax)
+                        intervals.append(Interval(sd3, i.lower, i.upper))
+                        mapper.update({i.dim: sd3})
+                        sd2 = sd3
+                    else:
+                        intervals.append(i)
+                else:
+                    intervals.append(i)
+
+            # Update `relations` with the newly created `Dimension`s
+            relations = []
+            for r in c.ispace.relations:
+                if any(f for f in family_dims) in r and mapper:
+                    newr = (j.xreplace(mapper) for j in r)
+                    relations.append(newr)
+                else:
+                    relations.append(r)
+
+            # Sanity check
+            assert len(relations) == len(c.ispace.relations)
+            # Build new intervals
+            intervals = IntervalGroup(intervals, relations=relations)
+
+            # Update `sub_iterators`, `directions`, `properties`, `expressions`
+            sub_iterators = dict(c.ispace.sub_iterators)
+            directions = dict(c.ispace.directions)
+            properties = dict(c.properties)
+
+            for f in family_dims:
+                sub_iterators.pop(f, None)
+                sub_iterators.update({mapper[f]: c.ispace.sub_iterators.get(f, [])})
+                directions.pop(f)
+                directions.update({mapper[f]: c.ispace.directions[f]})
+                properties.pop(f)
+                properties.update({mapper[f]: c.properties[f]})
+                exprs = xreplace_indices(c.exprs, {f: mapper[f]})
+
+            # Build the new `IterationSpace`
+            ispace = IterationSpace(intervals, sub_iterators, directions)
+
+            processed.append(c.rebuild(exprs=exprs, ispace=ispace,
+                                       properties=properties))
+
+        return processed
+
+
+def get_skewing_factor(cluster):
+    '''
+    Returns the skewing factor needed to skew a cluster of expressions. Skewing factor is
+    equal to half the maximum of the functions' space orders and helps to preserve valid
+    data dependencies while skewing.
+    Parameters
+    ----------
+    cluster: Cluster
+        Input Cluster, subject of the computation
+    '''
+    functions = {i.function for i in retrieve_indexed(cluster.exprs)}
+    try:
+        sf = int(max([i.space_order for i in functions])/2)
+    except AttributeError:
+        sf = 1
+    return (sf if sf else 1)
