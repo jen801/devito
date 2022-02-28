@@ -14,7 +14,8 @@ from devito.types.basic import Symbol, DataSymbol, Scalar
 
 __all__ = ['Dimension', 'SpaceDimension', 'TimeDimension', 'DefaultDimension',
            'CustomDimension', 'SteppingDimension', 'SubDimension', 'ConditionalDimension',
-           'dimensions', 'ModuloDimension', 'IncrDimension', 'BlockDimension', 'RIncrDimension']
+           'dimensions', 'ModuloDimension', 'IncrDimension', 'BlockDimension',
+           'RIncrDimension']
 
 
 Thickness = namedtuple('Thickness', 'left right')
@@ -1345,13 +1346,12 @@ class BlockDimension(AbstractIncrDimension):
         try:
             name = self.step.name
         except AttributeError:
-            # import pdb;pdb.set_trace()
             # `step` not a Symbol
             return
 
         value = args[name]
-        # import pdb;pdb.set_trace()
-        if isinstance(self.parent, BlockDimension) or isinstance(self.parent, RIncrDimension):
+        if isinstance(self.parent, BlockDimension) or isinstance(self.parent,
+                                                                 RIncrDimension):
             # sub-BlockDimensions must be perfect divisors of their parent
             parent_value = args[self.parent.step.name]
             if parent_value % value > 0:

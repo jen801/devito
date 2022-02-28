@@ -831,7 +831,6 @@ def test_decompose_src_temporal(shape, so, tn, inj):
     # op = Operator(tteqs, opt=('advanced', {'skewing': True}))
     op = Operator(tteqs, opt=('advanced'))
     op.apply(dt=model.critical_dt)
-    # import pdb;pdb.set_trace()
 
     # Assert that first, last as well as other indices are as expected
     assert(s_id.data[nzinds[0][0], nzinds[1][0], nzinds[2][0]] == 0)
