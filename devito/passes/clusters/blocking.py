@@ -223,14 +223,22 @@ def skewing(clusters, options):
         * `skewinner` (boolean, False): enable/disable loop skewing along the
            innermost loop.
     """
-    processed = clusters
     if options['blocktime']:
-        processed = TBlocking(options).process(processed)
+        clusters = TBlocking(options).process(clusters)
 
-    processed = Skewing(options).process(processed)
-    processed = RelaxSkewed(options).process(processed)
+    clusters = Skewing(options).process(clusters)
 
-    return processed
+    # from devito.tools import as_list
+    # mylist = as_list(clusters[0].ispace.relations)
+    # mylist1 = sum(mylist, ())
+    # unlist = set(mylist1)
+    # unlist1 = as_list(unlist)
+    # import pdb;pdb.set_trace()
+    # assert(len(clusters[0].ispace) + 1) == len(unlist1)
+
+    clusters = RelaxSkewed(options).process(clusters)
+
+    return clusters
 
 
 class Skewing(Queue):
