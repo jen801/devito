@@ -980,13 +980,13 @@ class SparseTimeFunction(AbstractSparseTimeFunction, SparseFunction):
 
             eq1 = Eq(in_i, sp_source_mask[x, sp_in], implicit_dims=(time, x, sp_in))
 
-            # eq2 = Eq(in_ii, sid[x, in_i], implicit_dims=(time, x, sp_in))
+            eq2 = Eq(in_ii, sid[x, in_i], implicit_dims=(time, x, sp_in))
 
             inj_expr = save_src[time, in_ii]
 
             eq3 = Inc(field[t, x, sid[x, in_i]], inj_expr, implicit_dims=(time, x, sp_in))
 
-            return (eq0, eq1, eq3)
+            return (eq0, eq1, eq2, eq3)
 
         elif len(field.grid.dimensions) == 3:  # 3D case
             x, y, z = field.grid.dimensions
