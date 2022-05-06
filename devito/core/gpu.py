@@ -56,7 +56,6 @@ class DeviceOperatorMixin(object):
     """
 
     GPU_FIT = 'all-fallback'
-    THREAD_LIMIT = None
     """
     Assuming all functions fit into the gpu memory.
     """
@@ -65,6 +64,16 @@ class DeviceOperatorMixin(object):
     """
     Use nested parallelism if the number of hyperthreads per core is greater
     than this threshold.
+    """
+
+    THREAD_LIMIT = None
+    """
+    Use a THREAD_LIMIT to trigger nested tiling parallelism for GPUs
+    """
+
+    OMP_LIMIT = 128
+    """
+    Use a THREAD_LIMIT to trigger nested tiling parallelism for GPUs
     """
 
     @classmethod
@@ -109,6 +118,7 @@ class DeviceOperatorMixin(object):
         o['par-disabled'] = oo.pop('par-disabled', True)  # No host parallelism by default
         o['gpu-fit'] = as_tuple(oo.pop('gpu-fit', cls._normalize_gpu_fit(**kwargs)))
         o['thread-limit'] = oo.pop('thread-limit', cls.THREAD_LIMIT)
+        o['omp-limit'] = oo.pop('omp-limit', cls.OMP_LIMIT)
 
         # Misc
         o['optcomms'] = oo.pop('optcomms', True)

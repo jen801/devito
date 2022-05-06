@@ -494,6 +494,9 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
         self.par_tile = options['par-tile']
         self.par_disabled = options['par-disabled']
         self.thread_limit = options['thread-limit']
+        self.omp_limit = options['omp-limit']
+
+        import pdb;pdb.set_trace()
 
     def _make_threaded_prodders(self, partree):
         if isinstance(partree.root, self.DeviceIteration):
