@@ -798,6 +798,10 @@ class ConditionalDimension(DerivedDimension):
             pass
         return retval
 
+    def _arg_defaults(self, _min=None, size=None, alias=None):
+        fact = getattr(self.factor, 'data', self.factor)
+        return self.parent._arg_defaults(_min=_min, size=size*fact, alias=alias)
+
     # Pickling support
     _pickle_kwargs = DerivedDimension._pickle_kwargs + ['factor', 'condition', 'indirect']
 
