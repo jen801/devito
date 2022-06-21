@@ -44,8 +44,8 @@ RUN apt-get update -y && \
 
 RUN curl -sL https://deb.nodesource.com/setup_12.x | bash - && \
     apt-get install -y -q \
-#        nvhpc-22-5-cuda-multi \
-        nvhpc-22-5 \
+        nvhpc-22-5-cuda-multi \
+        # nvhpc-22-5 \
         liblapack-dev  \
         libblas-dev \
         libibverbs-dev libmlx4-1 libmlx5-1 ibutils \
