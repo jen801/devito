@@ -81,7 +81,6 @@ class DeviceOmpIteration(OmpIteration):
         else:
             return 'omp target teams distribute thread_limit({})'.format(nthreads)
 
-
     @classmethod
     def _make_clauses(cls, **kwargs):
         kwargs['chunk_size'] = False

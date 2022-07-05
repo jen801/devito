@@ -166,7 +166,7 @@ class DeviceAccizer(PragmaDeviceAwareTransformer):
 
     lang = AccBB
 
-    def _make_partree(self, candidates, nthreads=None):
+    def _make_partree(self, candidates, nthreads=None, thread_limit=None):
         assert candidates
 
         root, collapsable = self._select_candidates(candidates)

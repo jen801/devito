@@ -13,8 +13,8 @@ from devito.passes.iet.engine import iet_pass
 from devito.passes.iet.langbase import (LangBB, LangTransformer, DeviceAwareMixin,
                                         make_sections_from_imask)
 from devito.symbolics import INT, ccode
-from devito.tools import as_tuple, prod, split
-from devito.types import Symbol, NThreadsBase
+from devito.tools import as_tuple, prod, split, flatten
+from devito.types import Symbol
 
 
 __all__ = ['PragmaSimdTransformer', 'PragmaShmTransformer',
@@ -273,7 +273,7 @@ class PragmaShmTransformer(PragmaSimdTransformer):
         partree = Transformer(mapper).visit(partree)
         return partree
 
-    def _make_partree(self, candidates, nthreads=None):
+    def _make_partree(self, candidates, nthreads=None, thread_limit=None):
         assert candidates
 
         # Get the collapsable Iterations
@@ -495,8 +495,6 @@ class PragmaDeviceAwareTransformer(DeviceAwareMixin, PragmaShmTransformer):
         self.par_disabled = options['par-disabled']
         self.thread_limit = options['thread-limit']
         self.omp_limit = options['omp-limit']
-
-        import pdb;pdb.set_trace()
 
     def _make_threaded_prodders(self, partree):
         if isinstance(partree.root, self.DeviceIteration):
