@@ -10,6 +10,12 @@ if [[ "$MPIVER" = "HPCX" ]]; then
    hpcx_load
 fi
 
+if [[ "$DEVITO_ARCH" = "icc" ]]; then
+   echo "loading Intel icc/mpicc enviroment"
+   source $ONEAPI_ROOT/compiler/latest/env/vars.sh
+   source $ONEAPI_ROOT/mpi/latest/env/vars.sh
+fi
+
 if [[ -z "${DEPLOY_ENV}" ]]; then
     exec "$@"
     ./codecov -t -t ${CODECOV_TOKEN} -F "${DEVITO_ARCH}-${DEVITO-PLATFORM}"
