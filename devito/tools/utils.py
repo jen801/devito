@@ -15,7 +15,7 @@ __all__ = ['prod', 'as_tuple', 'is_integer', 'generator', 'grouper', 'split', 'r
            'filter_sorted', 'dtype_to_cstr', 'dtype_to_ctype', 'dtype_to_mpitype',
            'ctypes_to_cstr', 'ctypes_to_cgen', 'pprint', 'sweep', 'all_equal', 'as_list',
            'indices_to_slices', 'indices_to_sections', 'transitive_closure',
-           'humanbytes', 'c_restrict_void_p']
+           'humanbytes']
 
 
 def prod(iterable, initial=1):
@@ -276,10 +276,6 @@ def ctypes_to_cstr(ctype, toarray=None, qualifiers=None):
     return retval
 
 
-class c_restrict_void_p(ctypes.c_void_p):
-    pass
-
-
 def ctypes_to_cgen(ctype, fields=None):
     """
     Create a cgen.Structure off a ctypes.Struct, or (possibly nested) ctypes.Pointer
@@ -311,7 +307,7 @@ def ctypes_to_cgen(ctype, fields=None):
             cstr = ctypes_to_cstr(ct)
 
         # All struct pointers are by construction restrict
-        if ct is c_restrict_void_p:
+        if ct is ctypes.c_void_p:
             cstr = '%srestrict' % cstr
 
         entries.append(Value(cstr, n))
