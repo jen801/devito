@@ -694,7 +694,7 @@ class Scope(object):
         for i, e in enumerate(exprs):
             # Reads
             terminals = retrieve_terminals(e, deep=True)
-            terminals.remove(e.lhs)  # We retain, though, all the indices
+            terminals.remove(e.lhs_terminal)  # Retain the indices, if any
             for j in filter_ordered(terminals):
                 v = self.reads.setdefault(j.function, [])
                 mode = 'RR' if e.is_Reduction and j.function is e.lhs.function else 'R'
