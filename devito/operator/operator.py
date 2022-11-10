@@ -870,7 +870,6 @@ class Operator(Callable):
                                               fround(self._profiler.py_timers['apply'])))
 
         summary = self._profiler.summary(args, self._dtype, reduce_over='apply')
-
         if not is_log_enabled_for('PERF'):
             # Do not waste time
             return summary
@@ -899,6 +898,8 @@ class Operator(Callable):
 
         # Emit local, i.e. "per-rank" performance. Without MPI, this is the only
         # thing that will be emitted
+
+        print("-----------------------------")
         for k, v in summary.items():
             rank = "[rank%d]" % k.rank if k.rank is not None else ""
             oi = "OI=%.2f" % fround(v.oi)
