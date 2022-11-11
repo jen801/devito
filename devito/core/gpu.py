@@ -116,7 +116,7 @@ class DeviceNoopOperator(DeviceOperatorMixin, CoreOperator):
         parizer.initialize(graph, options=options)
 
         # Symbol definitions
-        cls._Target.DataManager(sregistry, options).process(graph)
+        cls._Target.DataManager(**kwargs).process(graph)
 
         return graph
 
@@ -191,7 +191,7 @@ class DeviceAdvOperator(DeviceOperatorMixin, CoreOperator):
         hoist_prodders(graph)
 
         # Symbol definitions
-        cls._Target.DataManager(sregistry, options).process(graph)
+        cls._Target.DataManager(**kwargs).process(graph)
 
         # Linearize n-dimensional Indexeds
         linearize(graph, mode=options['linearize'], sregistry=sregistry)
