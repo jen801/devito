@@ -65,7 +65,11 @@ class IterationInstance(LabeledVector):
     """
 
     def __new__(cls, access):
-        findices = tuple(access.function.dimensions)
+        try:
+            findices = tuple(access.function.dimensions)
+        except AttributeError:
+            # E.g., Objects, which don't have `dimensions`
+            findices = ()
         if len(findices) != len(set(findices)):
             raise ValueError("Illegal non-unique `findices`")
         try:
@@ -694,7 +698,8 @@ class Scope(object):
         for i, e in enumerate(exprs):
             # Reads
             terminals = retrieve_terminals(e, deep=True)
-            terminals.remove(e.lhs_terminal)  # Retain the indices, if any
+            for j in retrieve_terminals(e.lhs):  # Not deep => retain the indices
+                terminals.remove(j)
             for j in filter_ordered(terminals):
                 v = self.reads.setdefault(j.function, [])
                 mode = 'RR' if e.is_Reduction and j.function is e.lhs.function else 'R'
