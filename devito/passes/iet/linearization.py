@@ -49,8 +49,7 @@ def linearization(iet, mode=None, tracker=None, sregistry=None, **kwargs):
         key0 = lambda f: mode(f) and f.ndim > 1
     else:
         # Default
-        #TODO: FACTORIZE the is_... SOMEHOW!
-        key0 = lambda f: (f.is_DiscreteFunction or f.is_Array or f.is_Bundle) and f.ndim > 1
+        key0 = lambda f: f.is_AbstractFunction and f.ndim > 1
     key1 = lambda f: not f._mem_stack
     key = lambda f: key0(f) and key1(f)
 
