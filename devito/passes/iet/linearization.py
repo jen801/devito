@@ -225,7 +225,11 @@ def _(f, strides, sregistry):
     header = (ccode(define), ccode(expr))
 
     def cbk(i):
-        return FIndexed(i, pname, strides=tuple(strides.values()))
+        if len(i.indices) == i.function.ndim:
+            return FIndexed(i, pname, strides=tuple(strides.values()))
+        else:
+            # Honour custom indexing
+            return i.base[sum(i.indices)]
 
     return header, cbk
 
