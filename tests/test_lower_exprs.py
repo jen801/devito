@@ -206,3 +206,19 @@ class TestLowering(object):
             leq = Operator._lower_exprs(eq)
 
         assert leq[0] == lowered
+
+
+class TestUnexpanded(object):
+
+    def test_dx(self):
+        grid = Grid(shape=(10, 10))
+
+        u = TimeFunction(name="u", grid=grid, space_order=4)
+        u1 = TimeFunction(name="u", grid=grid, space_order=4)
+
+        eq = Eq(u.forward, u.dx + 1.)
+
+        #op0 = Operator(eq)
+        op1 = Operator(eq, opt=('advanced', {'expand': False}))
+
+        from IPython import embed; embed()
