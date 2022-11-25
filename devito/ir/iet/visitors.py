@@ -176,37 +176,8 @@ class CGen(Visitor):
         super().__init__(*args, **kwargs)
         self._compiler = compiler
 
-    def _args_decl(self, args):
-        """Generate cgen declarations from an iterable of symbols and expressions."""
-        ret = []
-        for i in args:
-            if isinstance(i, (AbstractFunction, IndexedData)):
-                ret.append(self._gen_value(i, 1))
-            elif i.is_AbstractObject or i.is_Symbol:
-                ret.append(self._gen_value(i, 1))
-            else:
-                assert False
-                from IPython import embed; embed()
-                ret.append(c.Value('void', '*_%s' % i._C_name))
-        return ret
-
-    def _args_call(self, args):
-        """
-        Generate cgen function call arguments from an iterable of symbols and expressions.
-        """
-        ret = []
-        for i in args:
-            try:
-                if isinstance(i, Call):
-                    ret.append(self._visit(i, nested_call=True))
-                elif isinstance(i, Lambda):
-                    ret.append(self._visit(i))
-                else:
-                    ret.append(i._C_name)
-            except AttributeError:
-                ret.append(ccode(i))
-        return ret
-
+    # The following mappers may be customized by subclasses (that is,
+    # backend-specific CGen-erators)
     _qualifiers_mapper = {
         'is_const': 'const',
         'is_volatile': 'volatile',
@@ -285,6 +256,34 @@ class CGen(Visitor):
             pass
 
         return value
+
+    def _gen_rettype(self, obj):
+        try:
+            return self._gen_value(obj, 0).typename
+        except AttributeError:
+            assert isinstance(obj, str)
+            return obj
+
+    def _args_decl(self, args):
+        """Generate cgen declarations from an iterable of symbols and expressions."""
+        return [self._gen_value(i, 1) for i in args]
+
+    def _args_call(self, args):
+        """
+        Generate cgen function call arguments from an iterable of symbols and expressions.
+        """
+        ret = []
+        for i in args:
+            try:
+                if isinstance(i, Call):
+                    ret.append(self._visit(i, nested_call=True))
+                elif isinstance(i, Lambda):
+                    ret.append(self._visit(i))
+                else:
+                    ret.append(i._C_name)
+            except AttributeError:
+                ret.append(ccode(i))
+        return ret
 
     def _blankline_logic(self, children):
         """
@@ -548,7 +547,7 @@ class CGen(Visitor):
     def visit_Callable(self, o):
         body = flatten(self._visit(i) for i in o.children)
         decls = self._args_decl(o.parameters)
-        prefix = ' '.join(o.prefix + (o.retval,))
+        prefix = ' '.join(o.prefix + (self._gen_rettype(o.retval),))
         signature = c.FunctionDeclaration(c.Value(prefix, o.name), decls)
         return c.FunctionBody(signature, c.Block(body))
 
@@ -621,7 +620,8 @@ class CGen(Visitor):
         efuncs = [blankline]
         for i in o._func_table.values():
             if i.local:
-                prefix = ' '.join(i.root.prefix + (i.root.retval,))
+                rettype = self._gen_rettype(i.root.retval)
+                prefix = ' '.join(i.root.prefix + (rettype,))
                 esigns.append(c.FunctionDeclaration(c.Value(prefix, i.root.name),
                                                     self._args_decl(i.root.parameters)))
                 efuncs.extend([self._visit(i.root), blankline])

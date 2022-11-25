@@ -169,7 +169,7 @@ class DataManager(object):
 
         name = self.sregistry.make_name(prefix='alloc')
         body = (decl, *allocs, init, ret)
-        efunc0 = make_callable(name, body, retval=obj._C_typename)
+        efunc0 = make_callable(name, body, retval=obj)
         assert len(efunc0.parameters) == 1  # `nbytes_param`
         alloc = Call(name, nbytes_arg, retobj=obj)
 
