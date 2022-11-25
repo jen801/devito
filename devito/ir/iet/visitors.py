@@ -278,7 +278,7 @@ class CGen(Visitor):
             pass
 
         try:
-            if obj.initvalue and level == 2:
+            if obj.initvalue is not None and level == 2:
                 value = c.Initializer(value, ListInitializer(obj.initvalue))
         except AttributeError:
             pass
