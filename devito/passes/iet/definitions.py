@@ -103,7 +103,7 @@ class DataManager(object):
             initvalue = None
         else:
             initvalue = ListInitializer(obj.initvalue)
-        alloc = Definition(obj, shape=shape, qualifier=alignment, initvalue=initvalue)
+        alloc = Definition(obj, shape=shape, attributes=alignment, initvalue=initvalue)
 
         storage.update(obj, site, allocs=alloc)
 

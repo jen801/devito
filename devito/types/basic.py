@@ -10,8 +10,8 @@ from sympy.core.assumptions import _assume_rules
 from cached_property import cached_property
 
 from devito.data import default_allocator
-from devito.tools import (Pickable, as_tuple, ctypes_to_cstr, ctypes_to_cgen,
-                          dtype_to_ctype, frozendict, memoized_meth, sympy_mutex)
+from devito.tools import (Pickable, as_tuple, ctypes_to_cstr, dtype_to_ctype,
+                          frozendict, memoized_meth, sympy_mutex)
 from devito.types.args import ArgProvider
 from devito.types.caching import Cached, Uncached
 from devito.types.lazy import Evaluable
@@ -84,8 +84,7 @@ class CodeSymbol(object):
         _type = self._C_ctype
         while issubclass(_type, _Pointer):
             _type = _type._type_
-
-        return ctypes_to_cstr(_type, qualifiers=self._C_typequals)
+        return ctypes_to_cstr(_type)
 
     @property
     def _C_typename(self):
@@ -95,19 +94,11 @@ class CodeSymbol(object):
         If an object is expected to be passed by value, this will coincide
         with `_C_typedata`.
 
-        Instead, if an object is passed via a one-dimensional pointer, then
-        `self._C_typename` will add a `*` to whatever type is returned by
-        `self._C_typedata`.
-
-        This can be customized at will by subclasses.
-
-        By default, `self._C_typename = self._C_typedata`.
-
         Returns
         -------
         str
         """
-        return ctypes_to_cstr(self._C_ctype, qualifiers=self._C_typequals)
+        return ctypes_to_cstr(self._C_ctype)
 
     @abc.abstractproperty
     def _C_ctype(self):
@@ -129,22 +120,10 @@ class CodeSymbol(object):
         mapper = {
             'is_const': 'const',
             'is_volatile': 'volatile',
-            'is_shared': '__shared__',
+            '_mem_constant': '__constant__',
+            '_mem_shared': '__shared__',
         }
         return tuple(v for k, v in mapper.items() if getattr(self, k, False))
-
-    @property
-    def _C_typedecl(self):
-        """
-        The type declaration of the object in the generated code.
-
-        Returns
-        -------
-        cgen.Struct or None
-            None if the type of the object can be expressed with a basic type,
-            such as float or int, otherwise a cgen.Struct representing a C struct.
-        """
-        return ctypes_to_cgen(self._C_ctype, fields=getattr(self, 'fields', None))
 
     @property
     def _C_symbol(self):

@@ -7,6 +7,7 @@ The main Visitor class is adapted from https://github.com/coneoproject/COFFEE.
 from collections import OrderedDict
 from collections.abc import Iterable
 from itertools import chain, groupby
+import ctypes
 
 import cgen as c
 from sympy import IndexedBase
@@ -17,7 +18,8 @@ from devito.ir.iet.nodes import (Node, Iteration, Expression, ExpressionBundle,
 from devito.ir.support.space import Backward
 from devito.symbolics import ccode, uxreplace
 from devito.tools import (GenericVisitor, as_tuple, ctypes_vector_mapper,
-                          filter_ordered, filter_sorted, flatten, is_external_ctype)
+                          ctypes_to_cstr, filter_ordered, filter_sorted, flatten,
+                          is_external_ctype)
 from devito.types.basic import AbstractFunction, Basic
 from devito.types import (ArrayObject, CompositeObject, Dimension, Pointer,
                           IndexedData, DeviceMap)
@@ -203,6 +205,71 @@ class CGen(Visitor):
                 ret.append(ccode(i))
         return ret
 
+    _qualifiers_mapper = {
+        'is_const': 'const',
+        'is_volatile': 'volatile',
+        '_mem_constant': 'static const',
+        '_mem_shared': '',
+    }
+    _restrict_keyword = 'restrict'
+
+    def _gen_type(self, obj, masked=()):
+        """
+        Convert ctypes.Struct -> cgen.Structure.
+        """
+        ctype = obj._C_ctype
+        while issubclass(ctype, ctypes._Pointer):
+            ctype = ctype._type_
+
+        if not issubclass(ctype, ctypes.Structure):
+            return None
+
+        try:
+            cgentype = obj._C_typedecl
+        except AttributeError:
+            # Most of the times we end up here -- a generic procedure to
+            # automatically derive a cgen.Structure from the object _C_ctype
+
+            if obj.is_AbstractObject:
+                fields = obj.fields
+            else:
+                fields = (None,)*len(ctype._fields_)
+
+            entries = []
+            for i, (n, ct) in zip(fields, ctype._fields_):
+                try:
+                    from IPython import embed; embed()
+                    cstr = i._C_typename
+
+                    # Certain qualifiers are to be removed as meaningless within a struct
+                    degenerate_quals = ('const',)
+                    cstr = ' '.join([j for j in cstr.split() if j not in degenerate_quals])
+                except AttributeError:
+                    cstr = ctypes_to_cstr(ct)
+
+                # All struct pointers are by construction restrict
+                if ct is c_restrict_void_p:
+                    cstr = '%srestrict' % cstr
+
+                entries.append(c.Value(cstr, n))
+
+            cgentype = c.Struct(ctype.__name__, entries)
+
+        return str(cgentype)
+
+    def _gen_value(self, obj, masked=()):
+        qualifiers = [v for k, v in self._qualifiers_mapper.items()
+                      if getattr(obj, k, False) and v not in masked]
+
+        strtype = ctypes_to_cstr(obj._C_ctype)
+        strtype = ' '.join(qualifiers + [strtype])
+        if isinstance(obj, (AbstractFunction, IndexedData)):
+            strtype = '%s%s' % (strtype, self._restrict_keyword)
+
+        strname = obj._C_name
+
+        return c.Value(strtype, strname)
+
     def _blankline_logic(self, children):
         """
         Generate cgen blank lines in between logical units.
@@ -350,13 +417,13 @@ class CGen(Visitor):
         else:
             v = ""
 
-        if o.qualifier is not None:
-            v = "%s %s" % (v, o.qualifier)
+        if o.attributes is not None:
+            v = "%s %s" % (v, o.attributes)
 
         v = "%s%s" % (f._C_name, v)
 
         if f._mem_stack:
-            v = c.Value(f._C_typedata, v)
+            v = c.Value(self._gen_type(f), v)
         else:
             if o.cargs:
                 v = MultilineCall(v, o.cargs, True)
@@ -510,7 +577,7 @@ class CGen(Visitor):
                 for i in o._includes]
 
     def _operator_typedecls(self, o, mode='all'):
-        xfilter0 = lambda i: i._C_typedecl is not None
+        xfilter0 = lambda i: self._gen_type(i) is not None
 
         if mode == 'all':
             xfilter1 = xfilter0
@@ -526,11 +593,11 @@ class CGen(Visitor):
         xfilter = lambda i: xfilter1(i) and not is_external_ctype(i._C_ctype, o._includes)
 
         candidates = o.parameters + tuple(o._dspace.parts)
-        typedecls = [i._C_typedecl for i in candidates if xfilter(i)]
+        typedecls = [self._gen_type(i) for i in candidates if xfilter(i)]
         for i in o._func_table.values():
             if not i.local:
                 continue
-            typedecls.extend([j._C_typedecl for j in i.root.parameters if xfilter(j)])
+            typedecls.extend([self._gen_type(j) for j in i.root.parameters if xfilter(j)])
         typedecls = filter_sorted(typedecls, key=lambda i: i.tpname)
 
         return typedecls

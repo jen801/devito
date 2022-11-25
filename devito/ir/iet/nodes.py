@@ -859,11 +859,11 @@ class Definition(ExprStmt, Node):
 
     is_Definition = True
 
-    def __init__(self, function, shape=None, qualifier=None, initvalue=None,
+    def __init__(self, function, shape=None, attributes=None, initvalue=None,
                  cargs=None):
         self.function = function
         self.shape = shape
-        self.qualifier = qualifier
+        self.attributes = attributes
         self.initvalue = initvalue
         self.cargs = as_tuple(cargs)
 
