@@ -852,19 +852,12 @@ class Definition(ExprStmt, Node):
 
     """
     A node encapsulating a variable definition.
-
-    If `shape` is given, then the Definition implements an array allocated
-    on the stack, otherwise it implements an uninitialized pointer.
     """
 
     is_Definition = True
 
-    def __init__(self, function, shape=None, attributes=None, initvalue=None,
-                 cargs=None):
+    def __init__(self, function, cargs=None):
         self.function = function
-        self.shape = shape
-        self.attributes = attributes
-        self.initvalue = initvalue
         self.cargs = as_tuple(cargs)
 
     def __repr__(self):
@@ -876,7 +869,7 @@ class Definition(ExprStmt, Node):
 
     @property
     def defines(self):
-        if self.shape is not None:
+        if self.function._mem_stack is not None:
             return (self.function.indexed,)
         else:
             return (self.function,)

@@ -16,10 +16,10 @@ from devito.exceptions import VisitorException
 from devito.ir.iet.nodes import (Node, Iteration, Expression, ExpressionBundle,
                                  Call, Lambda, BlankLine, Section)
 from devito.ir.support.space import Backward
-from devito.symbolics import ccode, uxreplace
+from devito.symbolics import ListInitializer, ccode, uxreplace
 from devito.tools import (GenericVisitor, as_tuple, ctypes_vector_mapper,
                           ctypes_to_cstr, filter_ordered, filter_sorted, flatten,
-                          is_external_ctype)
+                          is_external_ctype, c_restrict_void_p)
 from devito.types.basic import AbstractFunction, Basic
 from devito.types import (ArrayObject, CompositeObject, Dimension, Pointer,
                           IndexedData, DeviceMap)
@@ -181,10 +181,11 @@ class CGen(Visitor):
         ret = []
         for i in args:
             if isinstance(i, (AbstractFunction, IndexedData)):
-                ret.append(c.Value('%srestrict' % i._C_typename, i._C_name))
+                ret.append(self._gen_value(i, 1))
             elif i.is_AbstractObject or i.is_Symbol:
-                ret.append(c.Value(i._C_typename, i._C_name))
+                ret.append(self._gen_value(i, 1))
             else:
+                from IPython import embed; embed()
                 ret.append(c.Value('void', '*_%s' % i._C_name))
         return ret
 
@@ -213,7 +214,7 @@ class CGen(Visitor):
     }
     _restrict_keyword = 'restrict'
 
-    def _gen_type(self, obj, masked=()):
+    def _gen_struct_decl(self, obj, masked=()):
         """
         Convert ctypes.Struct -> cgen.Structure.
         """
@@ -225,50 +226,64 @@ class CGen(Visitor):
             return None
 
         try:
-            cgentype = obj._C_typedecl
+            return obj._C_typedecl
         except AttributeError:
-            # Most of the times we end up here -- a generic procedure to
-            # automatically derive a cgen.Structure from the object _C_ctype
+            pass
 
-            if obj.is_AbstractObject:
-                fields = obj.fields
-            else:
-                fields = (None,)*len(ctype._fields_)
+        # Most of the times we end up here -- a generic procedure to
+        # automatically derive a cgen.Structure from the object _C_ctype
 
-            entries = []
-            for i, (n, ct) in zip(fields, ctype._fields_):
-                try:
-                    from IPython import embed; embed()
-                    cstr = i._C_typename
+        try:
+            fields = obj.fields
+        except AttributeError:
+            fields = (None,)*len(ctype._fields_)
 
-                    # Certain qualifiers are to be removed as meaningless within a struct
-                    degenerate_quals = ('const',)
-                    cstr = ' '.join([j for j in cstr.split() if j not in degenerate_quals])
-                except AttributeError:
-                    cstr = ctypes_to_cstr(ct)
-
-                # All struct pointers are by construction restrict
+        #entries = [self._gen_value(obj, masked=('const',))]
+        entries = []
+        for i, (n, ct) in zip(fields, ctype._fields_):
+            try:
+                entries.append(self._gen_value(i, 0, masked=('const',)))
+            except AttributeError:
+                cstr = ctypes_to_cstr(ct)
                 if ct is c_restrict_void_p:
                     cstr = '%srestrict' % cstr
-
                 entries.append(c.Value(cstr, n))
 
-            cgentype = c.Struct(ctype.__name__, entries)
+        return c.Struct(ctype.__name__, entries)
 
-        return str(cgentype)
-
-    def _gen_value(self, obj, masked=()):
+    def _gen_value(self, obj, level=2, masked=()):
         qualifiers = [v for k, v in self._qualifiers_mapper.items()
                       if getattr(obj, k, False) and v not in masked]
 
-        strtype = ctypes_to_cstr(obj._C_ctype)
+        if obj._mem_stack and level == 2:
+            strtype = obj._C_typedata
+            strshape = ''.join('[%s]' % ccode(i) for i in obj.symbolic_shape)
+        else:
+            strtype = ctypes_to_cstr(obj._C_ctype)
+            strshape = ''
+            if isinstance(obj, (AbstractFunction, IndexedData)) and level >= 1:
+                #is it always the case that _C_ctype == c_void_restrict_p? 
+                strtype = '%s%s' % (strtype, self._restrict_keyword)
         strtype = ' '.join(qualifiers + [strtype])
-        if isinstance(obj, (AbstractFunction, IndexedData)):
-            strtype = '%s%s' % (strtype, self._restrict_keyword)
 
         strname = obj._C_name
+        strobj = '%s%s' % (strname, strshape)
 
-        return c.Value(strtype, strname)
+        value = c.Value(strtype, strobj)
+
+        try:
+            if obj._data_alignment and level == 2:
+                value = c.AlignedAttribute(obj._data_alignment, value)
+        except AttributeError:
+            pass
+
+        try:
+            if obj.initvalue and level == 2:
+                value = c.Initializer(value, ListInitializer(obj.initvalue))
+        except AttributeError:
+            pass
+
+        return value
 
     def _blankline_logic(self, children):
         """
@@ -367,6 +382,7 @@ class CGen(Visitor):
         a0, a1 = o.functions
         if a1.is_PointerArray or a1.is_TempFunction:
             i = a1.indexed
+            from IPython import embed; embed()
             if o.flat is None:
                 shape = ''.join("[%s]" % ccode(i) for i in a0.symbolic_shape[1:])
                 rvalue = '(%s (*)%s) %s[%s]' % (i._C_typedata, shape, a1.name,
@@ -382,7 +398,7 @@ class CGen(Visitor):
                 )
         else:
             rvalue = '%s->%s' % (a1.name, a0._C_name)
-            lvalue = c.Value(a0._C_typename, a0._C_name)
+            lvalue = self._gen_value(a0, 0)
         return c.Initializer(lvalue, rvalue)
 
     def visit_Block(self, o):
@@ -412,18 +428,10 @@ class CGen(Visitor):
     def visit_Definition(self, o):
         f = o.function
 
-        if o.shape is not None:
-            v = o.shape
-        else:
-            v = ""
-
-        if o.attributes is not None:
-            v = "%s %s" % (v, o.attributes)
-
-        v = "%s%s" % (f._C_name, v)
+        v = f._C_name
 
         if f._mem_stack:
-            v = c.Value(self._gen_type(f), v)
+            v = self._gen_value(f)
         else:
             if o.cargs:
                 v = MultilineCall(v, o.cargs, True)
@@ -435,9 +443,6 @@ class CGen(Visitor):
             except ValueError:
                 v = c.Value(f._C_typename, v)
 
-        if o.initvalue is not None:
-            v = c.Initializer(v, o.initvalue)
-
         return v
 
     def visit_Expression(self, o):
@@ -445,7 +450,7 @@ class CGen(Visitor):
         rhs = ccode(o.expr.rhs, dtype=o.dtype, compiler=self._compiler)
 
         if o.init:
-            code = c.Initializer(c.Value(o.expr.lhs._C_typename, lhs), rhs)
+            code = c.Initializer(self._gen_value(o.expr.lhs), rhs)
         else:
             code = c.Assign(lhs, rhs)
 
@@ -577,7 +582,7 @@ class CGen(Visitor):
                 for i in o._includes]
 
     def _operator_typedecls(self, o, mode='all'):
-        xfilter0 = lambda i: self._gen_type(i) is not None
+        xfilter0 = lambda i: self._gen_struct_decl(i) is not None
 
         if mode == 'all':
             xfilter1 = xfilter0
@@ -593,11 +598,12 @@ class CGen(Visitor):
         xfilter = lambda i: xfilter1(i) and not is_external_ctype(i._C_ctype, o._includes)
 
         candidates = o.parameters + tuple(o._dspace.parts)
-        typedecls = [self._gen_type(i) for i in candidates if xfilter(i)]
+        typedecls = [self._gen_struct_decl(i) for i in candidates if xfilter(i)]
         for i in o._func_table.values():
             if not i.local:
                 continue
-            typedecls.extend([self._gen_type(j) for j in i.root.parameters if xfilter(j)])
+            typedecls.extend([self._gen_struct_decl(j) for j in i.root.parameters
+                              if xfilter(j)])
         typedecls = filter_sorted(typedecls, key=lambda i: i.tpname)
 
         return typedecls

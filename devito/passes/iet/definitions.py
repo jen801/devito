@@ -97,13 +97,7 @@ class DataManager(object):
         """
         Allocate an Array in the low latency memory.
         """
-        shape = "".join("[%s]" % ccode(i) for i in obj.symbolic_shape)
-        alignment = self.lang['aligned'](obj._data_alignment)
-        if obj.initvalue is None:
-            initvalue = None
-        else:
-            initvalue = ListInitializer(obj.initvalue)
-        alloc = Definition(obj, shape=shape, attributes=alignment, initvalue=initvalue)
+        alloc = Definition(obj)
 
         storage.update(obj, site, allocs=alloc)
 
@@ -190,8 +184,7 @@ class DataManager(object):
         """
         Allocate an Array of Objects in the low latency memory.
         """
-        shape = "".join("[%s]" % ccode(i) for i in obj.symbolic_shape)
-        decl = Definition(obj, shape=shape)
+        decl = Definition(obj)
 
         storage.update(obj, site, allocs=decl)
 
