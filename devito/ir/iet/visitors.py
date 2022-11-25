@@ -185,6 +185,7 @@ class CGen(Visitor):
             elif i.is_AbstractObject or i.is_Symbol:
                 ret.append(self._gen_value(i, 1))
             else:
+                assert False
                 from IPython import embed; embed()
                 ret.append(c.Value('void', '*_%s' % i._C_name))
         return ret
@@ -382,7 +383,6 @@ class CGen(Visitor):
         a0, a1 = o.functions
         if a1.is_PointerArray or a1.is_TempFunction:
             i = a1.indexed
-            from IPython import embed; embed()
             if o.flat is None:
                 shape = ''.join("[%s]" % ccode(i) for i in a0.symbolic_shape[1:])
                 rvalue = '(%s (*)%s) %s[%s]' % (i._C_typedata, shape, a1.name,
@@ -450,7 +450,7 @@ class CGen(Visitor):
         rhs = ccode(o.expr.rhs, dtype=o.dtype, compiler=self._compiler)
 
         if o.init:
-            code = c.Initializer(self._gen_value(o.expr.lhs), rhs)
+            code = c.Initializer(self._gen_value(o.expr.lhs, 0), rhs)
         else:
             code = c.Assign(lhs, rhs)
 

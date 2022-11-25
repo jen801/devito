@@ -869,7 +869,7 @@ class Definition(ExprStmt, Node):
 
     @property
     def defines(self):
-        if self.function._mem_stack is not None:
+        if self.function._mem_stack:
             return (self.function.indexed,)
         else:
             return (self.function,)

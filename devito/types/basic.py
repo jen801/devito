@@ -112,19 +112,6 @@ class CodeSymbol(object):
         """
         return
 
-    @cached_property
-    def _C_typequals(self):
-        """
-        The type qualifiers of the object in the generated code.
-        """
-        mapper = {
-            'is_const': 'const',
-            'is_volatile': 'volatile',
-            '_mem_constant': '__constant__',
-            '_mem_shared': '__shared__',
-        }
-        return tuple(v for k, v in mapper.items() if getattr(self, k, False))
-
     @property
     def _C_symbol(self):
         """
