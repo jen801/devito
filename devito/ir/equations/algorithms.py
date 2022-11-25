@@ -3,10 +3,10 @@ from operator import attrgetter
 
 from sympy import sympify
 
-from devito.symbolics import (retrieve_functions, retrieve_indexed, split_affine,
-                              uxreplace)
+from devito.symbolics import retrieve_indexed, split_affine, uxreplace
 from devito.tools import PartialOrderTuple, as_tuple, filter_sorted, flatten
 from devito.types import Dimension, IgnoreDimSort, StencilDimension
+from devito.types.basic import AbstractFunction
 
 __all__ = ['dimension_sort', 'lower_exprs']
 
@@ -112,7 +112,7 @@ def lower_exprs(expressions, **kwargs):
 
         # Handle Functions (typical case)
         mapper = {f: lower_exprs(f.indexify(subs=dimension_map), **kwargs)
-                  for f in retrieve_functions(expr)}
+                  for f in expr.find(AbstractFunction)}
 
         # Handle Indexeds (from index notation)
         for i in retrieve_indexed(expr):
