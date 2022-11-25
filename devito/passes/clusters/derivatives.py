@@ -2,7 +2,7 @@ from devito.finite_differences import IndexDerivative
 from devito.ir import Cluster, Interval, IntervalGroup, IterationSpace
 from devito.symbolics import uxreplace
 from devito.tools import as_tuple, timed_pass
-from devito.types import Inc, Symbol
+from devito.types import Eq, Inc, Symbol
 
 __all__ = ['lower_index_derivatives']
 
@@ -14,6 +14,7 @@ def lower_index_derivatives(clusters, sregistry=None, **kwargs):
 
         exprs = []
         for e in c.exprs:
+
             mapper = {}
             for i in e.find(IndexDerivative):
                 intervals = [Interval(d, d._min, d._max) for d in i.dimensions]
@@ -24,9 +25,11 @@ def lower_index_derivatives(clusters, sregistry=None, **kwargs):
 
                 name = sregistry.make_name(prefix='r')
                 s = Symbol(name=name, dtype=e.dtype)
-                expr = Inc(s, i.expr)
+                expr0 = Eq(s, 0.)
+                expr1 = Inc(s, i.expr)
 
-                processed.append(c.rebuild(exprs=expr, ispace=ispace))
+                processed.extend([c.rebuild(exprs=expr0),
+                                  c.rebuild(exprs=expr1, ispace=ispace)])
 
                 mapper[i] = s
 

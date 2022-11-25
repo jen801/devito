@@ -303,7 +303,7 @@ class Operator(Callable):
             * Apply substitution rules;
             * Shift indices for domain alignment.
         """
-        expand = kwargs['options']['expand']
+        expand = kwargs['options'].get('expand', True)
 
         # Specialization is performed on unevaluated expressions
         expressions = cls._specialize_dsl(expressions, **kwargs)
