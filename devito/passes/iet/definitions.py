@@ -82,7 +82,7 @@ class DataManager(object):
         """
         Allocate a LocalObject in the low latency memory.
         """
-        decl = Definition(obj, cargs=obj.cargs)
+        decl = Definition(obj)
 
         if obj._C_init:
             definition = (decl, obj._C_init)

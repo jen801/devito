@@ -241,10 +241,16 @@ class CGen(Visitor):
         strname = obj._C_name
         strobj = '%s%s' % (strname, strshape)
 
+        try:
+            if obj.cargs:
+                strobj = MultilineCall(strobj, obj.cargs, True)
+        except AttributeError:
+            pass
+
         value = c.Value(strtype, strobj)
 
         try:
-            if obj._data_alignment and level == 2:
+            if obj.is_AbstractFunction and obj._data_alignment and level == 2:
                 value = c.AlignedAttribute(obj._data_alignment, value)
         except AttributeError:
             pass
@@ -425,24 +431,7 @@ class CGen(Visitor):
         return c.Statement(v)
 
     def visit_Definition(self, o):
-        f = o.function
-
-        v = f._C_name
-
-        if f._mem_stack:
-            v = self._gen_value(f)
-        else:
-            if o.cargs:
-                v = MultilineCall(v, o.cargs, True)
-
-            # Aesthetics: `float * a` -> `float *a`
-            try:
-                t, stars = f._C_typename.split()
-                v = c.Value(t, '%s%s' % (stars, v))
-            except ValueError:
-                v = c.Value(f._C_typename, v)
-
-        return v
+        return self._gen_value(o.function)
 
     def visit_Expression(self, o):
         lhs = ccode(o.expr.lhs, dtype=o.dtype, compiler=self._compiler)
@@ -468,7 +457,7 @@ class CGen(Visitor):
 
     def visit_Call(self, o, nested_call=False):
         retobj = o.retobj
-        cast = o.cast and retobj._C_typename
+        cast = o.cast and self._gen_rettype(retobj)
         arguments = self._args_call(o.arguments)
         if retobj is None:
             return MultilineCall(o.name, arguments, nested_call, o.is_indirect, cast)
@@ -477,7 +466,8 @@ class CGen(Visitor):
             if retobj.is_Indexed:
                 return c.Assign(ccode(retobj), call)
             else:
-                return c.Initializer(c.Value(retobj._C_typename, retobj._C_name), call)
+                rettype = self._gen_rettype(retobj)
+                return c.Initializer(c.Value(rettype, retobj._C_name), call)
 
     def visit_Conditional(self, o):
         try:

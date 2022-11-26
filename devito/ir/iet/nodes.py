@@ -15,10 +15,11 @@ from devito.ir.support import (SEQUENTIAL, PARALLEL, PARALLEL_IF_ATOMIC,
                                PARALLEL_IF_PVT, VECTORIZED, AFFINE, COLLAPSED,
                                Property, Forward, detect_io)
 from devito.symbolics import ListInitializer, CallFromPointer, ccode
-from devito.tools import Signer, as_tuple, filter_ordered, filter_sorted, flatten
-from devito.types.basic import Basic, AbstractFunction, AbstractSymbol
+from devito.tools import (Signer, as_tuple, filter_ordered, filter_sorted, flatten,
+                          ctypes_to_cstr)
+from devito.types.basic import (AbstractFunction, AbstractSymbol, Basic, Indexed,
+                                Symbol)
 from devito.types.object import AbstractObject, LocalObject
-from devito.types import Indexed, Symbol
 
 __all__ = ['Node', 'Block', 'Expression', 'Callable', 'Call',
            'Conditional', 'Iteration', 'List', 'Section', 'TimedList', 'Prodder',
@@ -676,8 +677,9 @@ class Callable(Node):
         self.parameters = as_tuple(parameters)
 
     def __repr__(self):
+        param_types = [ctypes_to_cstr(i._C_ctype) for i in self.parameters]
         return "%s[%s]<%s; %s>" % (self.__class__.__name__, self.name, self.retval,
-                                   ",".join([i._C_typename for i in self.parameters]))
+                                   ",".join(param_types))
 
     @property
     def functions(self):
@@ -856,9 +858,8 @@ class Definition(ExprStmt, Node):
 
     is_Definition = True
 
-    def __init__(self, function, cargs=None):
+    def __init__(self, function):
         self.function = function
-        self.cargs = as_tuple(cargs)
 
     def __repr__(self):
         return "<Def(%s)>" % self.function

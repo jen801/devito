@@ -33,11 +33,11 @@ class CodeSymbol(object):
     its type.
 
     The _mem_* properties describe the object memory allocation strategy. There
-    are three axes with a few possible values each:
+    are three axes, with a few possible values each:
 
-        *"liveness": `_mem_external`, `_mem_internal_eager`, `_mem_internal_lazy`
-        *"space": `_mem_local`, `_mem_mapped`, `_mem_host`
-        *"scope": `_mem_stack`, `_mem_heap`
+        * "liveness": `_mem_external`, `_mem_internal_eager`, `_mem_internal_lazy`
+        * "space": `_mem_local`, `_mem_mapped`, `_mem_host`
+        * "scope": `_mem_stack`, `_mem_heap`
 
     For example, an object that is `<_mem_internal_lazy, _mem_local, _mem_heap>`
     is allocated within the Operator entry point, on either the host or device
@@ -75,40 +75,17 @@ class CodeSymbol(object):
     @property
     def _C_typedata(self):
         """
-        The type of the object in the generated code.
-
-        Returns
-        -------
-        str
+        The type of the object in the generated code as a `str`.
         """
         _type = self._C_ctype
         while issubclass(_type, _Pointer):
             _type = _type._type_
         return ctypes_to_cstr(_type)
 
-    @property
-    def _C_typename(self):
-        """
-        The type used to carry around the object in the generated code.
-
-        If an object is expected to be passed by value, this will coincide
-        with `_C_typedata`.
-
-        Returns
-        -------
-        str
-        """
-        return ctypes_to_cstr(self._C_ctype)
-
     @abc.abstractproperty
     def _C_ctype(self):
         """
-        The `_C_typename` of the object as a `ctypes` class, necessary for
-        jumping from Python-land to C-land.
-
-        Returns
-        -------
-        ctypes type
+        The type of the object in the generated code as a `ctypes` class.
         """
         return
 
