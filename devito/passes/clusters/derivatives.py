@@ -15,6 +15,7 @@ def lower_index_derivatives(clusters, sregistry=None, **kwargs):
         exprs = []
         for e in c.exprs:
 
+            #TODO: THIS DOESN'T WORK WITH RECURSIVE DERIVATIVES, eg u.dx.dy, ATM
             mapper = {}
             for i in e.find(IndexDerivative):
                 intervals = [Interval(d, 0, 0) for d in i.dimensions]

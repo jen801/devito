@@ -599,7 +599,14 @@ class IndexDerivative(IndexSum):
 
         # `a0` and `a1` may or may not be Indexeds this point. In the former case,
         # we need to pull out the underlying Functions
-        f0, f1 = a0.function, a1.function
+        try:
+            f0 = a0.function
+        except AttributeError:
+            f0 = None
+        try:
+            f1 = a1.function
+        except AttributeError:
+            f1 = None
 
         if isinstance(f0, Weights):
             weights = a0

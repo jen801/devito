@@ -228,3 +228,20 @@ class TestUnexpanded(object):
         op1.apply(time_M=5, u=u1)
 
         assert np.allclose(u.data, u1.data, rtol=1e-6)
+
+    def test_dxdy(self):
+        grid = Grid(shape=(10, 10))
+
+        u = TimeFunction(name="u", grid=grid, space_order=4)
+        u1 = TimeFunction(name="u", grid=grid, space_order=4)
+
+        eq = Eq(u.forward, u.dxdy + 1.)
+
+        op0 = Operator(eq)
+        op1 = Operator(eq, opt=('advanced', {'expand': False}))
+
+        from IPython import embed; embed()
+        op0.apply(time_M=5)
+        op1.apply(time_M=5, u=u1)
+
+        assert np.allclose(u.data, u1.data, rtol=1e-6)
