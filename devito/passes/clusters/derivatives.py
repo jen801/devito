@@ -63,7 +63,7 @@ def _lower_index_derivatives(expr, c, weights, sregistry):
     # Create concrete Weights and reuse them whenever possible
     name = sregistry.make_name(prefix='w')
     w0 = expr.weights.function
-    k = tuple(i.subs({i: 1 for i in w0.spacings}) for i in w0.weights)
+    k = tuple(w0.weights)
     try:
         w = weights[k]
     except KeyError:
