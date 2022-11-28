@@ -13,7 +13,7 @@ from cached_property import cached_property
 from devito.finite_differences.tools import make_shift_x0
 from devito.logger import warning
 from devito.tools import as_tuple, filter_ordered, flatten, is_integer, split
-from devito.types import Array, DimensionTuple, Evaluable, StencilDimension
+from devito.types import Array, DimensionTuple, Evaluable, Spacing, StencilDimension
 
 __all__ = ['Differentiable', 'IndexDerivative', 'EvalDerivative']
 
@@ -579,6 +579,8 @@ class Weights(Array):
         assert isinstance(d, StencilDimension) and d.symbolic_size == len(weights)
         assert isinstance(weights, (list, tuple, np.ndarray))
 
+        self._spacings = set().union(*[i.find(Spacing) for i in weights])
+
         kwargs['scope'] = 'constant'
 
         super().__init_finalize__(*args, **kwargs)
@@ -586,6 +588,10 @@ class Weights(Array):
     @property
     def dimension(self):
         return self.dimensions[0]
+
+    @property
+    def spacings(self):
+        return self._spacings
 
     weights = Array.initvalue
 

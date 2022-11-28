@@ -240,7 +240,6 @@ class TestUnexpanded(object):
         op0 = Operator(eq)
         op1 = Operator(eq, opt=('advanced', {'expand': False}))
 
-        from IPython import embed; embed()
         op0.apply(time_M=5)
         op1.apply(time_M=5, u=u1)
 
