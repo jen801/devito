@@ -2591,6 +2591,55 @@ class TestAliases(object):
         assert op._profiler._sections['section0'].sops == 16
 
 
+class TestAliasesUnexpanded(object):
+
+    #TODO: FACTORIZE OFF TestAliases and TestAliasesUnexpanded
+
+    def get_params(self, op, *names):
+        ret = []
+        for i in names:
+            for p in op.parameters:
+                if i == p.name:
+                    ret.append(p)
+        return tuple(ret)
+
+    def check_array(self, array, exp_halo, exp_shape, rotate=False):
+        assert len(array.dimensions) == len(exp_halo)
+
+        shape = []
+        for i in array.symbolic_shape:
+            if i.is_Number or i.is_Symbol:
+                shape.append(i)
+            else:
+                assert i.is_Add
+                shape.append(Add(*i.args))
+
+        if rotate:
+            exp_shape = (sum(exp_halo[0]) + 1,) + tuple(exp_shape[1:])
+            exp_halo = ((0, 0),) + tuple(exp_halo[1:])
+
+        assert tuple(array.halo) == exp_halo
+        assert tuple(shape) == tuple(exp_shape)
+
+    def test_space_invariant(self):
+        grid = Grid(shape=(10, 10, 10))
+
+        f = Function(name='f', grid=grid, space_order=4)
+        u = TimeFunction(name='u', grid=grid, space_order=4)
+
+        eqn = Eq(u.forward, (u*cos(f)).dx + 1.)
+
+        #op0 = Operator(eqn)
+        op1 = Operator(eqn, opt=('advanced', {'expand': False}))
+        from IPython import embed; embed()
+
+        #xs, ys, zs = self.get_params(op, 'x_size', 'y_size', 'z_size')
+        #arrays = [i for i in FindSymbols().visit(op1) if i.is_Array]
+        #assert len(arrays) == 1
+        #self.check_array(arrays[0], ((1, 0), (1, 0), (0, 0)), (xs+1, ys+1, zs))
+        #assert op._profiler._sections['section1'].sops == 15
+
+
 class TestIsoAcoustic(object):
 
     def run_acoustic_forward(self, opt=None):

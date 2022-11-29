@@ -599,27 +599,20 @@ class Weights(Array):
 class IndexDerivative(IndexSum):
 
     def __new__(cls, expr, dimensions, **kwargs):
-        if not (expr.is_Mul and len(expr.args) == 2):
+        # Detect the Weights among the arguments
+        weightss = []
+        for a in expr.args:
+            try:
+                f = a.function
+            except AttributeError:
+                continue
+            if isinstance(f, Weights):
+                weightss.append(a)
+
+        # Sanity check
+        if not (expr.is_Mul and len(weightss) == 1):
             raise ValueError("Expect `expr*weights`, got `%s` instead" % str(expr))
-        a0, a1 = expr.args
-
-        # `a0` and `a1` may or may not be Indexeds this point. In the former case,
-        # we need to pull out the underlying Functions
-        try:
-            f0 = a0.function
-        except AttributeError:
-            f0 = None
-        try:
-            f1 = a1.function
-        except AttributeError:
-            f1 = None
-
-        if isinstance(f0, Weights):
-            weights = a0
-        elif isinstance(f1, Weights):
-            weights = a1
-        else:
-            raise ValueError("Couldn't find weights array")
+        weights = weightss.pop()
 
         obj = super().__new__(cls, expr, dimensions)
         obj._weights = weights

@@ -16,7 +16,8 @@ from devito.symbolics import (Uxmapper, compare_ops, estimate_cost, q_constant,
 from devito.tools import (Stamp, as_mapper, as_tuple, flatten, frozendict, generator,
                           split, timed_pass)
 from devito.types import (Array, TempFunction, Eq, Symbol, Temp, ModuloDimension,
-                          CustomDimension, IncrDimension, Indexed, Hyperplane)
+                          CustomDimension, IncrDimension, StencilDimension, Indexed,
+                          Hyperplane)
 from devito.types.grid import MultiSubDimension
 
 __all__ = ['cire']
@@ -557,7 +558,7 @@ def collect(extracted, ispace, minstorage):
                 distances.append(LabeledVector([(d, v.pop()) for d, v in distance]))
 
             # Compute the alias score
-            na = len(aliaseds)
+            na = naliases(aliaseds, pivot)
             nr = nredundants(ispace, pivot)
             score = estimate_cost(pivot, True)*((na - 1) + nr)
             if score > 0:
@@ -1068,6 +1069,7 @@ class Group(tuple):
         for i in self.Toffsets:
             for d, v in i:
                 try:
+                    from IPython import embed; embed()
                     distance = int(max(v) - min(v))
                 except TypeError:
                     # An entry in `v` has symbolic components, e.g. `x_m + 2`
@@ -1335,6 +1337,18 @@ def split_coeff(expr):
     return maybe_coeff, others
 
 
+def naliases(aliaseds, pivot):
+    """
+    The number of aliases among `aliaseds` once StencilDimensions are "unwinded".
+    """
+    na = len(aliaseds)
+
+    sdims = pivot.find(StencilDimension)
+    implicit = int(np.prod([i._size for i in sdims])) - 1
+
+    return na + implicit
+
+
 def nredundants(ispace, expr):
     """
     The number of redundant Dimensions in `ispace` for `expr`. A Dimension is
@@ -1347,7 +1361,10 @@ def nredundants(ispace, expr):
     used = {i for i in expr.free_symbols if i.is_Dimension}
 
     # "Short" dimensions won't count
-    key = lambda d: d.is_Sub and d.local
+    key0 = lambda d: d.is_Sub and d.local
+    # StencilDimensions are like an inlined iteration space so they won't count
+    key1 = lambda d: d.is_Stencil
+    key = lambda d: key0(d) or key1(d)
     iterated = {d for d in iterated if not key(d)}
     used = {d for d in used if not key(d)}
 
