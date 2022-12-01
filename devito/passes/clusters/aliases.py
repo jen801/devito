@@ -10,7 +10,7 @@ from devito.finite_differences import EvalDerivative
 from devito.ir import (SEQUENTIAL, PARALLEL_IF_PVT, ROUNDABLE, SEPARABLE, Forward,
                        IterationInstance, IterationSpace, Interval, Cluster,
                        Queue, IntervalGroup, LabeledVector, normalize_properties,
-                       relax_properties)
+                       relax_properties, sdims_min, sdims_max)
 from devito.symbolics import (Uxmapper, compare_ops, estimate_cost, q_constant,
                               reuse_if_untouched, retrieve_indexed, search, uxreplace)
 from devito.tools import (Stamp, as_mapper, as_tuple, flatten, frozendict, generator,
@@ -512,6 +512,7 @@ def collect(extracted, ispace, minstorage):
                 impacted = [g for g in groups if d in g.dimensions]
 
                 for interval in list(intervals):
+                    from IPython import embed; embed()
                     found = {g: g.find_rotation_distance(d, interval) for g in impacted}
                     if all(distance is not None for distance in found.values()):
                         # `interval` is OK !
@@ -1036,8 +1037,8 @@ class Group(tuple):
 
     def find_rotation_distance(self, d, interval):
         """
-        The distance from the Group pivot of a rotation along Dimension ``d`` that
-        can safely iterate over the ``interval``.
+        The distance from the Group pivot of a rotation along Dimension `d` that
+        can safely iterate over the `interval`.
         """
         assert d is interval.dim
 
@@ -1068,9 +1069,12 @@ class Group(tuple):
         ret = defaultdict(int)
         for i in self.Toffsets:
             for d, v in i:
+                # Expand out the StencilDimensions, if any
+                minv = [sdims_min(e) for e in v]
+                maxv = [sdims_max(e) for e in v]
+
                 try:
-                    from IPython import embed; embed()
-                    distance = int(max(v) - min(v))
+                    distance = int(max(maxv) - min(minv))
                 except TypeError:
                     # An entry in `v` has symbolic components, e.g. `x_m + 2`
                     if len(set(v)) == 1:
