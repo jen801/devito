@@ -265,7 +265,10 @@ def sdims_min(expr):
     """
     Replace all StencilDimensions in `expr` with their minimum point.
     """
-    sdims = expr.find(StencilDimension)
+    try:
+        sdims = expr.find(StencilDimension)
+    except AttributeError:
+        return expr
     mapper = {e: e._min for e in sdims}
     return expr.subs(mapper)
 
@@ -274,7 +277,10 @@ def sdims_max(expr):
     """
     Replace all StencilDimensions in `expr` with their maximum point.
     """
-    sdims = expr.find(StencilDimension)
+    try:
+        sdims = expr.find(StencilDimension)
+    except AttributeError:
+        return expr
     mapper = {e: e._max for e in sdims}
     return expr.subs(mapper)
 
