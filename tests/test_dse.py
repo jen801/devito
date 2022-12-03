@@ -2661,6 +2661,20 @@ class TestAliases(object):
         assert len([i for i in FindSymbols().visit(op) if i.is_Array]) == 1
         assert op._profiler._sections['section0'].sops == 16
 
+    def test_fusion_after_unexpansion(self):
+        grid = Grid(shape=(10, 10, 10))
+
+        u = TimeFunction(name='u', grid=grid, space_order=4)
+
+        eqn = Eq(u.forward, u.dx + u.dy)
+
+        op = Operator(eqn, opt=('advanced', {'expand': False}))
+        print(op)
+
+        #TODO -- FIX THE OPERATION COUNT !!!!!!!!!!!!!!!!!
+        #assert op._profiler._sections['section0'].sops == 34
+        assert_structure(op, ['t,x,y,z', 't,x,y,z,i0'], 't,x,y,z,i0')
+
 
 class TestIsoAcoustic(object):
 

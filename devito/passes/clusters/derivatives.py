@@ -1,5 +1,6 @@
 from devito.finite_differences import IndexDerivative
 from devito.ir import Cluster, Interval, IntervalGroup, IterationSpace
+from devito.passes.clusters.misc import fuse
 from devito.symbolics import retrieve_dimensions, q_leaf, uxreplace
 from devito.tools import as_tuple, filter_ordered, timed_pass
 from devito.types import Eq, Inc, Spacing, StencilDimension, Symbol
@@ -8,14 +9,20 @@ __all__ = ['lower_index_derivatives']
 
 
 @timed_pass()
-def lower_index_derivatives(clusters, sregistry=None, **kwargs):
+def lower_index_derivatives(clusters, **kwargs):
+    clusters = _lower_index_derivatives(clusters, **kwargs)
+    clusters = fuse(clusters, toposort=True)
+
+    return clusters
+
+def _lower_index_derivatives(clusters, sregistry=None, **kwargs):
     processed = []
     weights = {}
     for c in clusters:
 
         exprs = []
         for e in c.exprs:
-            expr, v = _lower_index_derivatives(e, c, weights, sregistry)
+            expr, v = _lower_index_derivatives_core(e, c, weights, sregistry)
             exprs.append(expr)
             processed.extend(v)
 
@@ -24,7 +31,7 @@ def lower_index_derivatives(clusters, sregistry=None, **kwargs):
     return processed
 
 
-def _lower_index_derivatives(expr, c, weights, sregistry):
+def _lower_index_derivatives_core(expr, c, weights, sregistry):
     """
     Recursively carry out the core of `lower_index_derivatives`.
     """
@@ -34,7 +41,7 @@ def _lower_index_derivatives(expr, c, weights, sregistry):
     args = []
     processed = []
     for a in expr.args:
-        e, clusters = _lower_index_derivatives(a, c, weights, sregistry)
+        e, clusters = _lower_index_derivatives_core(a, c, weights, sregistry)
         args.append(e)
         processed.extend(clusters)
 
