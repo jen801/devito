@@ -77,7 +77,7 @@ def key1(f, d):
           constant symbolic sizes and strides;
         * A 3-tuple `(Dimension, halo size, grid)` otherwise.
     """
-    if f.is_regular and f.is_compact:
+    if f.is_regular:
         # TODO: same grid + same halo => same padding, however this is not asserted
         # during compilation... so maybe we should do it at `prepare_args` time?
         return (d, f._size_halo[d], getattr(f, 'grid', None))
