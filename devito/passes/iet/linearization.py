@@ -155,7 +155,7 @@ def linearize_accesses(iet, key0, tracker=None, sregistry=None, options=None,
                     v = DummyExpr(fsz, val, init=True)
                 else:
                     v = None
-            except KeyError:
+            except (AttributeError, KeyError):
                 v = None
             if v is not None:
                 instances[fsz] = v
