@@ -10,9 +10,10 @@ __all__ = ['lower_index_derivatives']
 
 
 @timed_pass()
-def lower_index_derivatives(clusters, **kwargs):
+def lower_index_derivatives(clusters, mode=None, **kwargs):
     clusters = _lower_index_derivatives(clusters, **kwargs)
-    clusters = fuse(clusters, toposort=True)
+    if mode != 'noop':
+        clusters = fuse(clusters, toposort=True)
 
     return clusters
 
