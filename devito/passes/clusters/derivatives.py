@@ -1,7 +1,8 @@
 from devito.finite_differences import IndexDerivative
 from devito.ir import Cluster, Interval, IntervalGroup, IterationSpace
 from devito.passes.clusters.misc import fuse
-from devito.symbolics import retrieve_dimensions, q_leaf, uxreplace
+from devito.symbolics import (retrieve_dimensions, reuse_if_untouched, q_leaf,
+                              uxreplace)
 from devito.tools import as_tuple, filter_ordered, timed_pass
 from devito.types import Eq, Inc, Spacing, StencilDimension, Symbol
 
@@ -45,7 +46,7 @@ def _lower_index_derivatives_core(expr, c, weights, sregistry):
         args.append(e)
         processed.extend(clusters)
 
-    expr = expr.func(*args)
+    expr = reuse_if_untouched(expr, args)
 
     if not isinstance(expr, IndexDerivative):
         return expr, processed
