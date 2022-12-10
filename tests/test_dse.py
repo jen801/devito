@@ -1537,9 +1537,9 @@ class TestAliases(object):
         self.check_array(arrays[0], ((2, 2), (2, 2), (0, 0)), (xs+4, ys+4, zs))
         assert op._profiler._sections['section1'].sops == 34
 
-    def test_space_invariant_v6(self):
+    def test_unexpanded_v0(self):
         """
-        Like test_space_invariant_v5, but now try expanded vs unexpanded
+        Inspired by test_space_invariant_v5, but now try with unexpanded
         derivatives.
         """
         grid = Grid(shape=(10, 10, 10))
@@ -1570,6 +1570,26 @@ class TestAliases(object):
 
         assert np.allclose(u.data, u1.data, rtol=10e-5)
         assert np.allclose(v.data, v1.data, rtol=10e-5)
+
+    def test_unexpanded_v1(self):
+        grid = Grid(shape=(10, 10, 10))
+
+        u = TimeFunction(name='u', grid=grid, space_order=4)
+        v = TimeFunction(name='v', grid=grid, space_order=4)
+        u1 = TimeFunction(name='u', grid=grid, space_order=4)
+        v1 = TimeFunction(name='v', grid=grid, space_order=4)
+
+        eqns = [Eq(u.forward, (u.dx.dy + v*u.dx + 1.)),
+                Eq(v.forward, (v.dy.dx + u.dx.dz + 1.))]
+
+        op0 = Operator(eqns)
+        op1 = Operator(eqns, opt=('advanced', {'expand': False}))
+
+        op0.apply(time_M=5)
+        op1.apply(time_M=5, u=u1, v=v1)
+
+        assert np.allclose(u.data, u1.data, rtol=10e-3)
+        assert np.allclose(v.data, v1.data, rtol=10e-3)
 
     def test_catch_duplicate_from_different_clusters(self):
         """
