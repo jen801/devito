@@ -28,7 +28,7 @@ __all__ = ['DataManager', 'DeviceAwareDataManager', 'Storage']
 class MetaSite(object):
 
     _items = ('allocs', 'objs', 'frees', 'pallocs', 'pfrees',
-              'maps', 'unmaps', 'efuncs', 'globs')
+              'maps', 'unmaps', 'efuncs')
 
     def __init__(self):
         for i in self._items:
@@ -110,10 +110,8 @@ class DataManager(object):
         # Is dynamic initialization required?
         try:
             if all(i.is_Number for i in obj.initvalue):
-                storage.update(obj, site, globs=obj)
                 return
         except AttributeError:
-            storage.update(obj, site, globs=obj)
             return
 
         initvalue = np.array(obj.initvalue)
@@ -127,7 +125,7 @@ class DataManager(object):
         efunc = make_callable(name, body)
         alloc = Call(name, efunc.parameters)
 
-        storage.update(obj, site, allocs=alloc, globs=obj, efuncs=efunc)
+        storage.update(obj, site, allocs=alloc, efuncs=efunc)
 
     def _alloc_scalar_on_low_lat_mem(self, site, expr, storage):
         """
@@ -260,7 +258,6 @@ class DataManager(object):
 
     def _inject_definitions(self, iet, storage):
         efuncs = []
-        globs = set()
         mapper = {}
         for k, v in storage.items():
             # Expr -> LocalExpr ?
@@ -296,18 +293,15 @@ class DataManager(object):
             # efuncs
             efuncs.extend(v.efuncs)
 
-            # Global symbols
-            globs.update(v.globs)
-
             mapper[cbody] = cbody._rebuild(allocs=allocs, maps=maps, objs=objs,
                                            unmaps=unmaps, frees=frees)
 
         processed = Transformer(mapper, nested=True).visit(iet)
 
-        return processed, flatten(efuncs), globs
+        return processed, flatten(efuncs)
 
     @iet_pass
-    def place_definitions(self, iet, **kwargs):
+    def place_definitions(self, iet, globs=None, **kwargs):
         """
         Create a new IET where all symbols have been declared, allocated, and
         deallocated in one or more memory spaces.
@@ -324,7 +318,7 @@ class DataManager(object):
             if k.is_Expression and k.is_initializable:
                 self._alloc_scalar_on_low_lat_mem((iet,) + v, k, storage)
 
-        iet, _, _ = self._inject_definitions(iet, storage)
+        iet, _ = self._inject_definitions(iet, storage)
 
         # Process all other definitions, essentially all temporary objects
         # created by the compiler up to this point (Array, LocalObject, etc.)
@@ -347,15 +341,21 @@ class DataManager(object):
                 elif i._mem_stack:
                     self._alloc_array_on_low_lat_mem(iet, i, storage)
                 else:
-                    self._alloc_array_on_global_mem(iet, i, storage)
+                    # Track, to be handled by the EntryFunction being a global obj!
+                    globs.add(i)
             elif i.is_ObjectArray:
                 self._alloc_object_array_on_low_lat_mem(iet, i, storage)
             elif i.is_PointerArray:
                 self._alloc_pointed_array_on_high_bw_mem(iet, i, storage)
 
-        iet, efuncs, globs = self._inject_definitions(iet, storage)
+        # Handle postponed global objects
+        if isinstance(iet, EntryFunction):
+            for i in globs:
+                self._alloc_array_on_global_mem(iet, i, storage)
 
-        return iet, {'efuncs': efuncs, 'globals': globs}
+        iet, efuncs = self._inject_definitions(iet, storage)
+
+        return iet, {'efuncs': efuncs, 'globals': tuple(globs)}
 
     @iet_pass
     def place_casts(self, iet, **kwargs):
@@ -391,7 +391,7 @@ class DataManager(object):
         """
         Apply the `place_definitions` and `place_casts` passes.
         """
-        self.place_definitions(graph)
+        self.place_definitions(graph, globs=set())
         self.place_casts(graph)
 
 
@@ -512,7 +512,7 @@ class DeviceAwareDataManager(DataManager):
                 else:
                     self._map_function_on_high_bw_mem(iet, i, storage, devicerm, True)
 
-            iet, efuncs, _ = self._inject_definitions(iet, storage)
+            iet, efuncs = self._inject_definitions(iet, storage)
 
             return iet, {'efuncs': efuncs}
 
@@ -546,7 +546,7 @@ class DeviceAwareDataManager(DataManager):
         """
         mapper = self.derive_transfers(graph)
         self.place_transfers(graph, mapper=mapper)
-        self.place_definitions(graph)
+        self.place_definitions(graph, globs=set())
         self.place_devptr(graph)
         self.place_bundling(graph)
         self.place_casts(graph)
