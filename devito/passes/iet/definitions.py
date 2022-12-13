@@ -17,7 +17,8 @@ from devito.passes import is_on_device
 from devito.passes.iet.engine import iet_pass, iet_visit
 from devito.passes.iet.langbase import LangBB
 from devito.symbolics import (Byref, DefFunction, FieldFromPointer, IndexedPointer,
-                              ListInitializer, SizeOf, VOID, Keyword, ccode)
+                              ListInitializer, SizeOf, VOID, Keyword, pow_to_mul,
+                              ccode)
 from devito.tools import as_mapper, as_list, as_tuple, filter_sorted, flatten
 from devito.types import DeviceMap, DeviceRM, Symbol
 
@@ -120,7 +121,9 @@ class DataManager(object):
         name = self.sregistry.make_name(prefix='init_global')
         body = []
         for i in product(*[range(s) for s in obj.shape]):
-            body.append(self.lang['alloc-global-symbol'](obj[i], initvalue[i]))
+            body.append(
+                self.lang['alloc-global-symbol'](obj[i], pow_to_mul(initvalue[i]))
+            )
         efunc = make_callable(name, body)
         alloc = Call(name, efunc.parameters)
 
